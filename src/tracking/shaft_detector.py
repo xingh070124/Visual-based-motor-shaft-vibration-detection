@@ -1,0 +1,183 @@
+"""电机轴圆形轮廓检测模块。
+
+在跟踪器预测的 ROI 区域内，通过 Canny 边缘检测 + 轮廓圆度筛选，
+精确定位电机轴的中心坐标。
+
+提取自原始脚本 stark_tracking_camera_coords.py 的 detect_shaft_center_in_roi() 函数。
+"""
+
+import cv2
+import numpy as np
+from typing import Tuple, Optional, List
+
+
+def estimate_expected_radius_from_roi(roi_box) -> float:
+    """从用户框选的 ROI 尺寸估算电机轴像素半径。
+
+    用于替代 Z-based compute_expected_radius_pixels() 作为检测先验。
+    假设 ROI 框大致贴合电机轴边缘 → 轴半径 ≈ min(W, H) / 2。
+
+    Args:
+        roi_box: (x, y, w, h) — 可以是 tuple/list/ndarray
+
+    Returns:
+        估算的像素半径（float）。返回值 > 0。
+    """
+    x, y, w, h = roi_box
+    return min(abs(w), abs(h)) / 2.0
+
+
+def detect_shaft_center_in_roi(
+    frame: np.ndarray,
+    roi_box: Tuple[float, float, float, float],
+    expected_radius_pixels: float,
+    circularity_threshold: float = 0.5,
+    radius_tolerance: float = 0.3,
+    min_contour_area: float = 100.0,
+    canny_low: int = 50,
+    canny_high: int = 150,
+    blur_kernel: Tuple[int, int] = (5, 5),
+    return_radius: bool = False
+):
+    """在给定的 ROI 中检测电机轴圆形轮廓，返回圆心坐标。
+
+    处理流程：
+        1. 裁剪 ROI 区域
+        2. 灰度化 + 高斯模糊
+        3. Canny 边缘检测
+        4. 查找轮廓，按圆度筛选
+        5. 用最小包围圆获取中心，半径校验
+        6. 若未找到合适轮廓，回退到 ROI 中心
+
+    Args:
+        frame: 完整帧图像 (BGR)
+        roi_box: 边界框 (x, y, w, h)
+        expected_radius_pixels: 预期像素半径（基于相机内参和已知轴径计算）
+        circularity_threshold: 圆度阈值（0~1），越接近 1 越严格，默认 0.5
+        radius_tolerance: 半径允许偏差比例，默认 0.3（±30%）
+        min_contour_area: 最小轮廓面积，过滤噪点，默认 100
+        canny_low: Canny 低阈值，默认 50
+        canny_high: Canny 高阈值，默认 150
+        blur_kernel: 高斯模糊核大小，默认 (5, 5)
+        return_radius: 是否同时返回检测半径，默认 False
+
+    Returns:
+        return_radius=False: (center_x, center_y)
+        return_radius=True:  (center_x, center_y, radius)
+        回退情况下 radius = expected_radius_pixels
+    """
+    x, y, w, h = map(int, roi_box)
+
+    # 边界检查
+    h_img, w_img = frame.shape[:2]
+    x = max(0, x)
+    y = max(0, y)
+    w = min(w, w_img - x)
+    h = min(h, h_img - y)
+
+    if w <= 0 or h <= 0:
+        print("[WARN]️ ROI 区域无效，回退到 bbox 中心")
+        if return_radius:
+            return x + w / 2, y + h / 2, 0.0
+        return x + w / 2, y + h / 2
+
+    roi = frame[y:y + h, x:x + w]
+
+    # 预处理：灰度化
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # ---- 策略1: 霍夫圆检测（对视频/实拍图像更鲁棒） ----
+    circles = cv2.HoughCircles(
+        gray, cv2.HOUGH_GRADIENT, dp=1, minDist=20,
+        param1=100, param2=25,
+        minRadius=int(expected_radius_pixels * 0.4),
+        maxRadius=int(expected_radius_pixels * 1.8)
+    )
+
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        best_circle = None
+        best_score = float('inf')
+        roi_center = np.array([w / 2, h / 2])
+
+        for c in circles[0, :]:
+            cr, cc, cradius = int(c[1]), int(c[0]), int(c[2])
+            # 评分: 半径偏差 + 距离 ROI 中心偏差
+            r_err = abs(cradius - expected_radius_pixels) / expected_radius_pixels
+            d_err = np.linalg.norm(np.array([cc, cr]) - roi_center) / max(w, h)
+            score = r_err + d_err * 2
+            if score < best_score:
+                best_score = score
+                best_circle = (cc, cr, cradius)
+
+        if best_circle is not None and best_score < 0.8:
+            cx_roi, cy_roi, radius = best_circle
+            center_x = x + cx_roi
+            center_y = y + cy_roi
+            if return_radius:
+                return center_x, center_y, float(radius)
+            return center_x, center_y
+
+    # ---- 策略2: 轮廓圆度检测（对清晰棋盘格/理想图像） ----
+    blurred = cv2.GaussianBlur(gray, blur_kernel, 0)
+    edges = cv2.Canny(blurred, canny_low, canny_high)
+
+    contours, _ = cv2.findContours(
+        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if contours:
+        best_contour = None
+        best_circularity = 0.0
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < min_contour_area:
+                continue
+            perimeter = cv2.arcLength(cnt, True)
+            if perimeter == 0:
+                continue
+            circularity = 4 * np.pi * area / (perimeter ** 2)
+            if circularity > best_circularity:
+                best_circularity = circularity
+                best_contour = cnt
+
+        if best_contour is not None and best_circularity > circularity_threshold:
+            (cx_roi, cy_roi), radius = cv2.minEnclosingCircle(best_contour)
+            radius_diff = abs(radius - expected_radius_pixels)
+            max_allowed_diff = expected_radius_pixels * radius_tolerance
+
+            if radius_diff < max_allowed_diff:
+                center_x = x + cx_roi
+                center_y = y + cy_roi
+                if return_radius:
+                    return center_x, center_y, radius
+                return center_x, center_y
+
+    # ---- 策略3: 回退到 ROI 中心（未检测到圆） ----
+    if return_radius:
+        return x + w / 2, y + h / 2, 0.0
+    return x + w / 2, y + h / 2
+
+
+def compute_expected_radius_pixels(
+    fx: float,
+    shaft_diameter_m: float,
+    depth_z: float
+) -> float:
+    """根据相机内参和物理参数计算预期的像素半径。
+
+    DEPRECATED: 比例尺已改为轴径自标定（ROI 先验 + 前 N 帧中位数），
+    不再需要此函数。推荐使用 estimate_expected_radius_from_roi() 作为初始检测先验。
+
+    公式：radius_pixels = (shaft_diameter_m / 2 * fx) / depth_z
+
+    Args:
+        fx: 相机焦距 (像素)
+        shaft_diameter_m: 电机轴直径 (米)
+        depth_z: 目标深度 (米)
+
+    Returns:
+        预期像素半径
+    """
+    return (shaft_diameter_m / 2 * fx) / depth_z

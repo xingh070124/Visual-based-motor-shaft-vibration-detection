@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE / 工具
+.trae/
+.claude/
+.vscode/
+
+# 大文件 — STARK 模型权重（109MB，需从 MODEL_ZOO 单独下载）
+STARK/baseline/STARKST_ep0050.pth.tar
+STARK/baseline/STARKST_ep0050.pth/
+
+# 大文件 — 原始视频（10个 × ~107MB）
+test/video/*.mp4
+
+# 大文件 — 跟踪输出视频（10个 × ~78MB，可重新生成）
+test/output/*/*_tracked.mp4
+
+# 临时文件
+*.tmp
+*.bak
+*.log
