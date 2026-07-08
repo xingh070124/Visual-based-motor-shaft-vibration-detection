@@ -32,13 +32,15 @@ from src import config
 # =============================================================================
 
 F = config.FX_CALIB_NEW        # 焦距 fx ≈ 2928.5 px
-CX = config.CX_CALIB_NEW        # 主点
+CX = config.CX_CALIB_NEW        # 主点 (1013, 757)
 CY = config.CY_CALIB_NEW
 Z0 = 0.25                      # 物距 (m)
 D = config.SHAFT_DIAMETER_M    # 轴径 0.012 m
 R = D / 2                      # 轴半径
 
-IMG_W, IMG_H = 1920, 1080
+# 图像尺寸（基于主点位置调整）
+IMG_W = int(2 * CX)
+IMG_H = int(2 * CY)
 
 # 椭圆颜色（灰度，模拟金属轴端面）
 INTENSITY_BG = 30              # 背景灰度
@@ -77,6 +79,11 @@ def project_tilted_circle(theta_deg, vibration_x=0.0, vibration_y=0.0, n_points=
     # 透视投影
     u = F * X3 / Z_rot + CX
     v = F * Y_rot / Z_rot + CY
+
+    # 消除倾斜导致的中心偏移（f*tan(theta) 在 v 方向）
+    # 真实场景中相机瞄准轴端面中心，所以图像中心就是端面中心
+    # 减去这个偏移让椭圆中心始终在 (CX, CY)
+    v = v + F * sin_t / cos_t  # 减去 -f*tan(theta) = 加 f*tan(theta)
 
     return u, v
 
@@ -262,7 +269,7 @@ def batch_render():
                             vibration_phase=phase,
                             sigma=sigma,
                             blur_len=blur,
-                            amp_um=50.0,
+                            amp_um=500.0,  # 500μm — 投影到像素约 5.86px，超出 fitEllipse 分辨率
                             seed=seed,
                             out_path=out_png,
                             gt_path=out_csv,

@@ -267,14 +267,20 @@ def detect_ellipse_in_roi(
     # 预处理：灰度化 + 高斯模糊 + CLAHE
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, blur_kernel, 0)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray = clahe.apply(gray)
 
-    # Canny 边缘检测
-    edges = cv2.Canny(gray, canny_low, canny_high)
+    # 检测策略：优先用 Otsu 二值化（适用于轴端面 vs 背景对比度高的场景），
+    # 失败时回退到 CLAHE + Canny
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    otsu_thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
 
-    # 查找轮廓
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if otsu_thresh > 30:  # 背景暗、目标亮的有效分割
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    else:
+        # 回退：CLAHE + Canny
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray_eq = clahe.apply(gray)
+        edges = cv2.Canny(gray_eq, canny_low, canny_high)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     if not contours:
         if return_params:

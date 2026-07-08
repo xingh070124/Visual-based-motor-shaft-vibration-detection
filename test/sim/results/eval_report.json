@@ -1,0 +1,222 @@
+{
+  "anisotropic": {
+    "mode": "anisotropic",
+    "n_images": 640,
+    "by_theta": [
+      {
+        "theta_true": 0.0,
+        "count": 80,
+        "theta_err_mean": 1.6677506814018752,
+        "theta_err_max": 3.014914213570408,
+        "amp_rel_err_mean_pct": 7.113335782412064,
+        "amp_rel_err_max_pct": 11.977576383890119,
+        "theta_err_low_noise_max": 2.7347865282566577,
+        "theta_err_med_noise_max": 2.7347865282566577,
+        "theta_err_all_max": 3.014914213570408,
+        "amp_rel_err_ideal_max_pct": 11.977576383890119,
+        "amp_rel_err_ideal_mean_pct": 7.417726828080766
+      },
+      {
+        "theta_true": 3.0,
+        "count": 80,
+        "theta_err_mean": 0.47392091651891144,
+        "theta_err_max": 1.1378356554845241,
+        "amp_rel_err_mean_pct": 7.857538364399455,
+        "amp_rel_err_max_pct": 13.576584165749296,
+        "theta_err_low_noise_max": 0.9760258996105362,
+        "theta_err_med_noise_max": 0.9760258996105362,
+        "theta_err_all_max": 1.1378356554845241,
+        "amp_rel_err_ideal_max_pct": 13.575404965458073,
+        "amp_rel_err_ideal_mean_pct": 8.13516905565101
+      },
+      {
+        "theta_true": 5.0,
+        "count": 80,
+        "theta_err_mean": 0.2536840988947931,
+        "theta_err_max": 0.8629677323716916,
+        "amp_rel_err_mean_pct": 8.09414203120139,
+        "amp_rel_err_max_pct": 13.63449390395422,
+        "theta_err_low_noise_max": 0.4321678371821118,
+        "theta_err_med_noise_max": 0.730115907755394,
+        "theta_err_all_max": 0.8629677323716916,
+        "amp_rel_err_ideal_max_pct": 13.613692990878201,
+        "amp_rel_err_ideal_mean_pct": 8.385606401508078
+      },
+      {
+        "theta_true": 8.0,
+        "count": 80,
+        "theta_err_mean": 0.12815691974361215,
+        "theta_err_max": 0.3989768079230167,
+        "amp_rel_err_mean_pct": 8.491725806344991,
+        "amp_rel_err_max_pct": 14.98265447606783,
+        "theta_err_low_noise_max": 0.3627788553987017,
+        "theta_err_med_noise_max": 0.3989768079230167,
+        "theta_err_all_max": 0.3989768079230167,
+        "amp_rel_err_ideal_max_pct": 14.98265447606783,
+        "amp_rel_err_ideal_mean_pct": 8.807444820629538
+      },
+      {
+        "theta_true": 10.0,
+        "count": 80,
+        "theta_err_mean": 0.3390132155069622,
+        "theta_err_max": 0.4999678082538672,
+        "amp_rel_err_mean_pct": 9.043440445348399,
+        "amp_rel_err_max_pct": 15.970625190849416,
+        "theta_err_low_noise_max": 0.4999678082538672,
+        "theta_err_med_noise_max": 0.4999678082538672,
+        "theta_err_all_max": 0.4999678082538672,
+        "amp_rel_err_ideal_max_pct": 15.865105904266786,
+        "amp_rel_err_ideal_mean_pct": 9.321902801580057
+      },
+      {
+        "theta_true": 12.0,
+        "count": 80,
+        "theta_err_mean": 0.1431666251566386,
+        "theta_err_max": 0.34200009929151953,
+        "amp_rel_err_mean_pct": 8.788936618224307,
+        "amp_rel_err_max_pct": 15.815178526830664,
+        "theta_err_low_noise_max": 0.3057084417421976,
+        "theta_err_med_noise_max": 0.34200009929151953,
+        "theta_err_all_max": 0.34200009929151953,
+        "amp_rel_err_ideal_max_pct": 15.815178526830664,
+        "amp_rel_err_ideal_mean_pct": 9.13195129600464
+      },
+      {
+        "theta_true": 15.0,
+        "count": 80,
+        "theta_err_mean": 0.10671842595971096,
+        "theta_err_max": 0.3292473236229867,
+        "amp_rel_err_mean_pct": 9.66215230099216,
+        "amp_rel_err_max_pct": 16.717538289732676,
+        "theta_err_low_noise_max": 0.2362586833351532,
+        "theta_err_med_noise_max": 0.27105672515253687,
+        "theta_err_all_max": 0.3292473236229867,
+        "amp_rel_err_ideal_max_pct": 16.717538289732676,
+        "amp_rel_err_ideal_mean_pct": 10.031428701793555
+      },
+      {
+        "theta_true": 20.0,
+        "count": 80,
+        "theta_err_mean": 0.07388363695903863,
+        "theta_err_max": 0.19115542539567443,
+        "amp_rel_err_mean_pct": 10.142000835727725,
+        "amp_rel_err_max_pct": 18.4033994665706,
+        "theta_err_low_noise_max": 0.19115542539567443,
+        "theta_err_med_noise_max": 0.19115542539567443,
+        "theta_err_all_max": 0.19115542539567443,
+        "amp_rel_err_ideal_max_pct": 18.4033994665706,
+        "amp_rel_err_ideal_mean_pct": 10.40052577781236
+      }
+    ]
+  },
+  "naive": {
+    "mode": "naive",
+    "n_images": 640,
+    "by_theta": [
+      {
+        "theta_true": 0.0,
+        "count": 80,
+        "theta_err_mean": 1.6677506814018752,
+        "theta_err_max": 3.014914213570408,
+        "amp_rel_err_mean_pct": 7.103440753057896,
+        "amp_rel_err_max_pct": 11.977575556697692,
+        "theta_err_low_noise_max": 2.7347865282566577,
+        "theta_err_med_noise_max": 2.7347865282566577,
+        "theta_err_all_max": 3.014914213570408,
+        "amp_rel_err_ideal_max_pct": 11.977575556697692,
+        "amp_rel_err_ideal_mean_pct": 7.412457535729741
+      },
+      {
+        "theta_true": 3.0,
+        "count": 80,
+        "theta_err_mean": 0.47392091651891144,
+        "theta_err_max": 1.1378356554845241,
+        "amp_rel_err_mean_pct": 7.876384627915316,
+        "amp_rel_err_max_pct": 13.583158039068502,
+        "theta_err_low_noise_max": 0.9760258996105362,
+        "theta_err_med_noise_max": 0.9760258996105362,
+        "theta_err_all_max": 1.1378356554845241,
+        "amp_rel_err_ideal_max_pct": 13.577260751284637,
+        "amp_rel_err_ideal_mean_pct": 8.156691208873234
+      },
+      {
+        "theta_true": 5.0,
+        "count": 80,
+        "theta_err_mean": 0.2536840988947931,
+        "theta_err_max": 0.8629677323716916,
+        "amp_rel_err_mean_pct": 8.111074443442655,
+        "amp_rel_err_max_pct": 13.561200148338687,
+        "theta_err_low_noise_max": 0.4321678371821118,
+        "theta_err_med_noise_max": 0.730115907755394,
+        "theta_err_all_max": 0.8629677323716916,
+        "amp_rel_err_ideal_max_pct": 13.541528680861061,
+        "amp_rel_err_ideal_mean_pct": 8.400579198045746
+      },
+      {
+        "theta_true": 8.0,
+        "count": 80,
+        "theta_err_mean": 0.12815691974361215,
+        "theta_err_max": 0.3989768079230167,
+        "amp_rel_err_mean_pct": 8.561454625430532,
+        "amp_rel_err_max_pct": 14.973963720821832,
+        "theta_err_low_noise_max": 0.3627788553987017,
+        "theta_err_med_noise_max": 0.3989768079230167,
+        "theta_err_all_max": 0.3989768079230167,
+        "amp_rel_err_ideal_max_pct": 14.973963720821832,
+        "amp_rel_err_ideal_mean_pct": 8.875919714956432
+      },
+      {
+        "theta_true": 10.0,
+        "count": 80,
+        "theta_err_mean": 0.3390132155069622,
+        "theta_err_max": 0.4999678082538672,
+        "amp_rel_err_mean_pct": 9.16596348127694,
+        "amp_rel_err_max_pct": 15.948339587628688,
+        "theta_err_low_noise_max": 0.4999678082538672,
+        "theta_err_med_noise_max": 0.4999678082538672,
+        "theta_err_all_max": 0.4999678082538672,
+        "amp_rel_err_ideal_max_pct": 15.83678000131043,
+        "amp_rel_err_ideal_mean_pct": 9.449649823821629
+      },
+      {
+        "theta_true": 12.0,
+        "count": 80,
+        "theta_err_mean": 0.1431666251566386,
+        "theta_err_max": 0.34200009929151953,
+        "amp_rel_err_mean_pct": 8.924001240397011,
+        "amp_rel_err_max_pct": 15.745896954511233,
+        "theta_err_low_noise_max": 0.3057084417421976,
+        "theta_err_med_noise_max": 0.34200009929151953,
+        "theta_err_all_max": 0.34200009929151953,
+        "amp_rel_err_ideal_max_pct": 15.745896954511233,
+        "amp_rel_err_ideal_mean_pct": 9.268593718554689
+      },
+      {
+        "theta_true": 15.0,
+        "count": 80,
+        "theta_err_mean": 0.10671842595971096,
+        "theta_err_max": 0.3292473236229867,
+        "amp_rel_err_mean_pct": 9.895694377610512,
+        "amp_rel_err_max_pct": 16.606057164491755,
+        "theta_err_low_noise_max": 0.2362586833351532,
+        "theta_err_med_noise_max": 0.27105672515253687,
+        "theta_err_all_max": 0.3292473236229867,
+        "amp_rel_err_ideal_max_pct": 16.606057164491755,
+        "amp_rel_err_ideal_mean_pct": 10.270999139756467
+      },
+      {
+        "theta_true": 20.0,
+        "count": 80,
+        "theta_err_mean": 0.07388363695903863,
+        "theta_err_max": 0.19115542539567443,
+        "amp_rel_err_mean_pct": 10.550291959334382,
+        "amp_rel_err_max_pct": 18.14851726810927,
+        "theta_err_low_noise_max": 0.19115542539567443,
+        "theta_err_med_noise_max": 0.19115542539567443,
+        "theta_err_all_max": 0.19115542539567443,
+        "amp_rel_err_ideal_max_pct": 18.14851726810927,
+        "amp_rel_err_ideal_mean_pct": 10.818680290289555
+      }
+    ]
+  }
+}
