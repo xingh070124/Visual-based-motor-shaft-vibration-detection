@@ -1,0 +1,17 @@
+param,value
+theta_true_deg,15
+vibration_phase_deg,90
+amp_um,50.0
+sigma,3
+blur_len,7
+seed,1
+ellipse_cx_px,1013.4000854492188
+ellipse_cy_px,-27.293331146240234
+ellipse_a_px,75.3255844116211
+ellipse_b_px,72.7613296508789
+ellipse_angle_deg,2.6301073376089334e-05
+vibration_x_m,3.0616169978683828e-21
+vibration_y_m,4.9999999999999996e-05
+theta_est_arcmin,14.99293830841644
+vibration_x_um,3.0616169978683826e-15
+vibration_y_um,49.99999999999999
