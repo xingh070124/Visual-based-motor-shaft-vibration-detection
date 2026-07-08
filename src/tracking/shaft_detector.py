@@ -208,3 +208,120 @@ def compute_expected_radius_pixels(
         预期像素半径
     """
     return (shaft_diameter_m / 2 * fx) / depth_z
+
+
+# =============================================================================
+# Phase 3: 椭圆检测 — 用于倾斜轴场景
+# =============================================================================
+
+def detect_ellipse_in_roi(
+    frame: np.ndarray,
+    roi_box: Tuple[float, float, float, float],
+    expected_radius_pixels: float,
+    circularity_threshold: float = 0.3,
+    min_contour_area: float = 100.0,
+    canny_low: int = 50,
+    canny_high: int = 150,
+    blur_kernel: Tuple[int, int] = (5, 5),
+    return_params: bool = False
+):
+    """在 ROI 内拟合椭圆，返回中心坐标和椭圆参数。
+
+    用于轴不垂直于相机平面的场景：倾斜圆投影为椭圆，
+    通过 fitEllipse 获取长短轴，再用各向异性 scale 补偿。
+
+    Args:
+        frame: 完整帧图像 (BGR)
+        roi_box: 边界框 (x, y, w, h)
+        expected_radius_pixels: 预期像素半径（基于 ROI 尺寸估算）
+        circularity_threshold: 最低圆度要求，默认 0.3
+        min_contour_area: 最小轮廓面积，过滤噪点
+        canny_low: Canny 低阈值
+        canny_high: Canny 高阈值
+        blur_kernel: 高斯模糊核大小
+        return_params: 是否返回完整椭圆参数 (a, b, angle)
+
+    Returns:
+        return_params=False: (center_x, center_y)
+        return_params=True:  (center_x, center_y, a, b, angle)
+            其中 a, b 为半轴长度（像素），angle 为长轴方向角（度）
+        回退情况下 a=b=expected_radius, angle=0
+    """
+    x, y, w, h = map(int, roi_box)
+
+    # 边界检查
+    h_img, w_img = frame.shape[:2]
+    x = max(0, x)
+    y = max(0, y)
+    w = min(w, w_img - x)
+    h = min(h, h_img - y)
+
+    if w <= 0 or h <= 0:
+        print("[WARN] ROI 区域无效，回退到 bbox 中心")
+        if return_params:
+            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
+        return x + w / 2, y + h / 2
+
+    roi = frame[y:y + h, x:x + w]
+
+    # 预处理：灰度化 + 高斯模糊 + CLAHE
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, blur_kernel, 0)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    # Canny 边缘检测
+    edges = cv2.Canny(gray, canny_low, canny_high)
+
+    # 查找轮廓
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+    if not contours:
+        if return_params:
+            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
+        return x + w / 2, y + h / 2
+
+    # 选面积最大且圆度达标的轮廓
+    best_contour = None
+    best_score = 0.0
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < min_contour_area:
+            continue
+        perimeter = cv2.arcLength(cnt, True)
+        if perimeter == 0:
+            continue
+        circularity = 4 * np.pi * area / (perimeter ** 2)
+        if circularity < circularity_threshold:
+            continue
+        # 评分：面积 × 圆度
+        score = area * circularity
+        if score > best_score:
+            best_score = score
+            best_contour = cnt
+
+    if best_contour is None or len(best_contour) < 5:
+        if return_params:
+            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
+        return x + w / 2, y + h / 2
+
+    # fitEllipse 返回 ((cx, cy), (width, height), angle)
+    # width/height 是全长轴（直径），需除以2得到半轴
+    (cx_roi, cy_roi), (width, height), angle = cv2.fitEllipse(best_contour)
+    a = max(width, height) / 2.0  # 半长轴
+    b = min(width, height) / 2.0  # 半短轴
+
+    # 半径校验：半长轴不应偏离预期太多
+    if a > expected_radius_pixels * 1.5 or a < expected_radius_pixels * 0.5:
+        print(f"[WARN] 椭圆半长轴 {a:.1f} 偏离预期 {expected_radius_pixels:.1f}，回退")
+        if return_params:
+            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
+        return x + w / 2, y + h / 2
+
+    center_x = x + cx_roi
+    center_y = y + cy_roi
+
+    if return_params:
+        return center_x, center_y, a, b, angle
+    return center_x, center_y

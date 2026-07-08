@@ -119,3 +119,78 @@ def pixel_to_mm(
         (X_m, Y_m): 相对主点的物理位移，单位 米
     """
     return (pixel_x - cx) * scale_m_per_px, (pixel_y - cy) * scale_m_per_px
+
+
+# =============================================================================
+# Phase 5: 各向异性坐标换算 — 用于倾斜轴补偿（推导3）
+# =============================================================================
+
+def estimate_tilt_angle(a: float, b: float) -> float:
+    """从椭圆长短轴反演倾角（推导2）。
+
+    公式：theta = arccos(b/a)
+
+    Args:
+        a: 椭圆半长轴（像素）
+        b: 椭圆半短轴（像素）
+
+    Returns:
+        倾角（度），范围 [0, 90)
+    """
+    if a <= 0 or b <= 0:
+        return 0.0
+    ratio = min(a, b) / max(a, b)
+    ratio = min(ratio, 1.0)  # 防止浮点误差导致 >1
+    return float(np.degrees(np.arccos(ratio)))
+
+
+def pixel_to_mm_anisotropic(
+    pixel_x: float,
+    pixel_y: float,
+    cx: float,
+    cy: float,
+    scale_major: float,
+    scale_minor: float,
+    ellipse_angle: float
+) -> Tuple[float, float]:
+    """各向异性 scale 坐标换算（推导3）。
+
+    倾斜轴投影为椭圆后，长短轴方向缩放不同：
+      - 长轴方向（⊥倾斜）：scale_major = D/(2a)
+      - 短轴方向（∥倾斜）：scale_minor = D/(2b)
+
+    流程：
+      1. 像素位移 (du, dv) = (pixel_x - cx, pixel_y - cy)
+      2. 旋转到椭圆主轴坐标系
+      3. 分别用 scale_major / scale_minor 换算
+      4. 旋转回相机坐标系
+
+    Args:
+        pixel_x: 像素 x 坐标
+        pixel_y: 像素 y 坐标
+        cx: 主点 cx
+        cy: 主点 cy
+        scale_major: 长轴方向比例尺 (m/px) = D/(2a)
+        scale_minor: 短轴方向比例尺 (m/px) = D/(2b)
+        ellipse_angle: 椭圆长轴方向角（度，来自 cv2.fitEllipse）
+
+    Returns:
+        (X_m, Y_m): 相对主点的物理位移，单位 米
+    """
+    rad = np.radians(ellipse_angle)
+    du = pixel_x - cx
+    dv = pixel_y - cy
+
+    # 旋转到椭圆主轴坐标系
+    du_major = du * np.cos(rad) + dv * np.sin(rad)
+    dv_minor = -du * np.sin(rad) + dv * np.cos(rad)
+
+    # 各向异性换算
+    X_major = scale_major * du_major
+    Y_minor = scale_minor * dv_minor
+
+    # 旋转回相机坐标系
+    X = X_major * np.cos(rad) - Y_minor * np.sin(rad)
+    Y = X_major * np.sin(rad) + Y_minor * np.cos(rad)
+
+    return float(X), float(Y)
