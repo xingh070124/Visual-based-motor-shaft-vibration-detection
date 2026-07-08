@@ -83,15 +83,19 @@ def detect_shaft_center_in_roi(
 
     roi = frame[y:y + h, x:x + w]
 
-    # 预处理：灰度化
+    # 预处理：灰度化 + 统一高斯模糊 + CLAHE光照自适应
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, blur_kernel, 0)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
 
     # ---- 策略1: 霍夫圆检测（对视频/实拍图像更鲁棒） ----
     circles = cv2.HoughCircles(
-        gray, cv2.HOUGH_GRADIENT, dp=1, minDist=20,
-        param1=100, param2=25,
-        minRadius=int(expected_radius_pixels * 0.4),
-        maxRadius=int(expected_radius_pixels * 1.8)
+        gray, cv2.HOUGH_GRADIENT, dp=1,
+        minDist=max(20, int(expected_radius_pixels * 1.5)),
+        param1=100, param2=40,
+        minRadius=int(expected_radius_pixels * 0.85),
+        maxRadius=int(expected_radius_pixels * 1.15)
     )
 
     if circles is not None:
@@ -112,6 +116,29 @@ def detect_shaft_center_in_roi(
 
         if best_circle is not None and best_score < 0.8:
             cx_roi, cy_roi, radius = best_circle
+            # 圆度验证：在检测到的圆周围裁剪，做轮廓圆度检查
+            r_check = int(radius)
+            y1 = max(0, cy_roi - r_check)
+            y2 = min(h, cy_roi + r_check)
+            x1 = max(0, cx_roi - r_check)
+            x2 = min(w, cx_roi + r_check)
+            if y2 > y1 and x2 > x1:
+                circle_region = gray[y1:y2, x1:x2]
+                circle_edges = cv2.Canny(circle_region, canny_low, canny_high)
+                cntrs, _ = cv2.findContours(circle_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if cntrs:
+                    best_cnt = max(cntrs, key=cv2.contourArea)
+                    area = cv2.contourArea(best_cnt)
+                    perim = cv2.arcLength(best_cnt, True)
+                    if perim > 0:
+                        circ = 4 * np.pi * area / (perim ** 2)
+                        if circ > 0.3:  # 最低圆度要求
+                            center_x = x + cx_roi
+                            center_y = y + cy_roi
+                            if return_radius:
+                                return center_x, center_y, float(radius)
+                            return center_x, center_y
+            # 圆度验证失败，仍接受Hough结果（降级策略）
             center_x = x + cx_roi
             center_y = y + cy_roi
             if return_radius:
@@ -119,8 +146,8 @@ def detect_shaft_center_in_roi(
             return center_x, center_y
 
     # ---- 策略2: 轮廓圆度检测（对清晰棋盘格/理想图像） ----
-    blurred = cv2.GaussianBlur(gray, blur_kernel, 0)
-    edges = cv2.Canny(blurred, canny_low, canny_high)
+    # gray 已在策略1前做过高斯模糊+CLAHE，直接用
+    edges = cv2.Canny(gray, canny_low, canny_high)
 
     contours, _ = cv2.findContours(
         edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE

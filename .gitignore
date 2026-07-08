@@ -18,6 +18,7 @@ test/video/*.mp4
 
 # 大文件 — 跟踪输出视频（10个 × ~78MB，可重新生成）
 test/output/*/*_tracked.mp4
+test/output_fixed/*/*_tracked.mp4
 
 # 临时文件
 *.tmp

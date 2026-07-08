@@ -24,6 +24,7 @@ matplotlib.use('Agg')  # 无 GUI 后端
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
+from collections import deque
 import glob
 import argparse
 
@@ -355,7 +356,10 @@ def process_single_video(
         return_radius=True
     )
     if init_radius > 0:
-        expected_radius = init_radius  # 自适应先验
+        expected_radius = init_radius  # 首帧检测半径作为先验
+    # 滑动窗口中位数（替代逐帧自适应更新，防止正反馈崩溃）
+    radius_history = deque(maxlen=config.RADIUS_HISTORY_WINDOW)
+    init_radius_for_scale = init_radius if init_radius > 0 else expected_radius  # 比例尺标定用
     init_center = (init_center_x, init_center_y)  # 返回 2-tuple 给后续 old-style ref
 
     # ---- 初始化跟踪器 ----
@@ -475,9 +479,14 @@ def process_single_video(
             canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
             blur_kernel=config.GAUSSIAN_BLUR_KERNEL, return_radius=True
         )
-        # 自适应先验：检测成功则更新
+        # 滑动窗口中位数更新（替代逐帧自适应，防止正反馈崩溃）
         if vis_radius > 0:
-            expected_radius = vis_radius
+            # 异常检测：偏离首帧半径超过阈值则跳过
+            if abs(vis_radius - init_radius_for_scale) / max(init_radius_for_scale, 1) < config.RADIUS_ANOMALY_THRESHOLD:
+                radius_history.append(vis_radius)
+            # 用中位数更新expected_radius（至少需要10帧）
+            if len(radius_history) >= config.RADIUS_HISTORY_MIN:
+                expected_radius = float(np.median(list(radius_history)))
 
         # 更新渲染状态（渲染用 last_radius 不归零，保持画圆连续）
         last_bbox = pred_box
@@ -504,18 +513,13 @@ def process_single_video(
 
     print(f"\r  处理完成! ({frame_idx}/{total_frames} 帧)")
 
-    # ---- 中位数比例尺标定 + 批量坐标换算 ----
-    radii = np.array([r[3] for r in results])
-    valid = radii[radii > 0]
-    N_calib = min(config.SCALE_CALIB_FRAMES, len(valid))
-    calib = valid[:N_calib] if len(valid) >= N_calib else valid
+    # ---- 首帧半径比例尺标定 + 批量坐标换算 ----
+    # 改进：用首帧检测半径标定（最清晰、无运动模糊），替代前50帧中位数
     scale = None
-    if len(calib) > 0:
-        median_r = float(np.median(calib))
-        scale = compute_scale_m_per_px(config.SHAFT_DIAMETER_M, median_r)
+    if init_radius_for_scale > 0:
+        scale = compute_scale_m_per_px(config.SHAFT_DIAMETER_M, init_radius_for_scale)
         print(
-            f"  [CALIB] 比例尺: 有效帧={len(valid)}/{len(results)}, "
-            f"前{N_calib}帧半径中位数={median_r:.1f} px → "
+            f"  [CALIB] 比例尺: 首帧半径={init_radius_for_scale:.1f} px → "
             f"scale={scale*1e6:.1f} μm/px "
             f"(轴径{config.SHAFT_DIAMETER_MM:.0f}mm 为唯一先验，不依赖 Z)"
         )
@@ -636,7 +640,11 @@ def main():
     parser.add_argument("--step", type=int, default=1,
                         help="帧采样步长（默认1=每帧处理，设为3=每3帧处理一次，大幅提速）")
     parser.add_argument("--resume", action="store_true",
-                        help="跳过已有完整输出的视频（断点续传）")
+                        help="跳过已有结果的视频")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="自定义输出目录（默认 test/output）")
+    parser.add_argument("--exclude", type=str, default=None,
+                        help="排除指定视频（逗号分隔视频名，如 90,100）")
     args = parser.parse_args()
 
     # ---- 查找视频 ----
@@ -652,6 +660,14 @@ def main():
         video_files = [v for v in video_files
                        if os.path.splitext(os.path.basename(v))[0] == target]
 
+    # 排除指定视频
+    if args.exclude:
+        excl_names = {x.strip() for x in args.exclude.split(',') if x.strip()}
+        before = len(video_files)
+        video_files = [v for v in video_files
+                       if os.path.splitext(os.path.basename(v))[0] not in excl_names]
+        print(f"[INFO] 排除视频 {sorted(excl_names)}，{before} -> {len(video_files)} 个视频")
+
     if not video_files:
         print(f"[ERROR] 在 {video_folder} 中未找到视频文件")
         return
@@ -661,13 +677,13 @@ def main():
         print(f"  - {os.path.basename(vf)}")
 
     # ---- 输出目录 ----
-    output_root = os.path.join(_PROJECT_ROOT, config.BATCH_OUTPUT_DIR)
+    output_root = os.path.join(_PROJECT_ROOT, args.output_dir if args.output_dir else config.BATCH_OUTPUT_DIR)
     os.makedirs(output_root, exist_ok=True)
     print(f"\n输出目录: {output_root}")
 
     # ---- 相机参数（仅主点 cx/cy 参与换算，Z 和 fx 不再需要） ----
     print(f"内参主点: cx={config.CX:.2f}, cy={config.CY:.2f}")
-    print(f"比例尺标定: 轴径={config.SHAFT_DIAMETER_MM:.0f}mm, 前{config.SCALE_CALIB_FRAMES}帧中位数")
+    print(f"比例尺标定: 轴径={config.SHAFT_DIAMETER_MM:.0f}mm, 首帧检测半径")
 
     # ---- ROI ----
     init_roi = args.roi if args.roi else None
