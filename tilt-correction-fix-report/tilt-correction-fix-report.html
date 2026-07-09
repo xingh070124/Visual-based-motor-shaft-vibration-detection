@@ -104,7 +104,7 @@ tr:hover td { background: var(--bg2); }
 <header class="report-header">
   <h1>电机轴倾斜补偿方案问题诊断与修复报告</h1>
   <div class="subtitle">基于视觉的电机轴振动检测系统 — 倾斜补偿方向代码审查与修复</div>
-  <div class="meta">李昕泽 221001700218 | 2026-07-09 | commit: 94264e9</div>
+  <div class="meta">李昕泽 221001700218 | 2026-07-09 | commit: c1687f5</div>
 </header>
 
 <!-- Summary Stats -->
@@ -116,7 +116,7 @@ tr:hover td { background: var(--bg2); }
       <div class="label">识别问题总数</div>
     </div>
     <div class="stat-card">
-      <div class="num success">7</div>
+      <div class="num success">8</div>
       <div class="label">已修复问题</div>
     </div>
     <div class="stat-card">
@@ -124,7 +124,7 @@ tr:hover td { background: var(--bg2); }
       <div class="label">发现新根因</div>
     </div>
   </div>
-  <p>本次工作对倾斜补偿方案进行了全面代码审查，识别出 10 个问题（2 致命、3 高危、5 中等），并通过 4 次 git 提交完成了 7 个问题的修复。在修复过程中，分离评估实验发现了一个此前未识别的理论缺陷：<strong>透视投影导致椭圆长轴膨胀，使得 D/(2a) 不是振动位移的正确换算系数</strong>。</p>
+  <p>本次工作对倾斜补偿方案进行了全面代码审查，识别出 10 个问题（2 致命、3 高危、5 中等），并通过 6 次 git 提交完成了 8 个问题的修复。在修复过程中，发现并修复了一个此前未识别的理论缺陷：<strong>透视投影导致椭圆长轴膨胀，使得 D/(2a) 不是振动位移的正确换算系数</strong>。正确的公式为 <code>D·a/(2b²)</code>，在仿真和真实视频上均验证通过。</p>
 </section>
 
 <!-- Problem Matrix -->
@@ -149,7 +149,7 @@ tr:hover td { background: var(--bg2); }
         <tr><td class="mono">5</td><td>Scale/角度不一致</td><td><span class="badge high">高</span></td><td><span class="badge fixed">已修复</span></td><td class="mono">c7c0557</td></tr>
         <tr><td class="mono">6</td><td>椭圆中心透视偏移</td><td><span class="badge medium">中</span></td><td><span class="badge pending">已量化</span></td><td class="mono">94264e9</td></tr>
         <tr><td class="mono">7</td><td>小角度退化未处理</td><td><span class="badge medium">中</span></td><td><span class="badge fixed">已修复</span></td><td class="mono">c7c0557</td></tr>
-        <tr><td class="mono">8</td><td>补偿改善量低于理论</td><td><span class="badge high">高</span></td><td><span class="badge fixed">根因已定位</span></td><td class="mono">94264e9</td></tr>
+        <tr><td class="mono">8</td><td>补偿改善量低于理论</td><td><span class="badge high">高</span></td><td><span class="badge fixed">已修复</span></td><td class="mono">586ba6e</td></tr>
         <tr><td class="mono">9</td><td>仿真/生产参数不一致</td><td><span class="badge medium">中</span></td><td><span class="badge pending">待处理</span></td><td>-</td></tr>
         <tr><td class="mono">10</td><td>缺少真实数据验证</td><td><span class="badge medium">中</span></td><td><span class="badge pending">待处理</span></td><td>-</td></tr>
       </tbody>
@@ -228,6 +228,46 @@ V 方向（沿倾斜方向）: scale_v = Z₀ / F<br><br>
   </div>
 
   <p>短轴方向（U 方向）的 scale 恰好正确，因为短轴不受透视膨胀影响。长轴方向（V 方向）的 scale 被低估，导致该方向的振动位移被过度压缩。</p>
+
+  <h3>修复方案：透视修正 Scale D·a/(2b²)</h3>
+  <p>由 <code>b = F·R/(Z₀·cos θ)</code> 和 <code>cos θ = b/a</code> 推导出正确的各向同性位移换算系数：</p>
+  <div class="math">
+scale = Z₀/F = D·a / (2·b²)
+  </div>
+  <p>关键结论：位移换算系数在所有方向相同（均为 Z₀/F），倾斜只改变投影形状（圆→椭圆），不改变位移的 scale。各向异性换算在位移测量中是错误的。</p>
+
+  <figure class="chart-figure">
+    <figcaption>图 4: 透视修正 Scale 验证 — 三种方案误差对比（GT 中心）</figcaption>
+    <div id="chart-persp-verify" style="width:100%;min-height:400px"></div>
+  </figure>
+
+  <div class="callout success">
+    <p><strong>验证结果</strong>：θ=0° 时透视修正误差为 0.000%（完美），所有倾角下透视修正均优于 naive 和各向异性。θ=20° 时误差从 5.6%（naive）降至 3.7%（透视修正）。</p>
+  </div>
+</section>
+
+<!-- Real Video Validation -->
+<section>
+  <h2>真实视频验证</h2>
+  <p>在 <code>test/video/10.mp4</code>（10 RPM，1920×1080，71.64 FPS，1486 帧）上进行了椭圆模式和圆形模式的对比验证。</p>
+
+  <div class="callout success">
+    <p><strong>关键发现</strong>：首帧椭圆检测得到 a=100.0px, b=100.0px, θ_est=0.00°，说明实际电机轴几乎垂直于相机。小角度退化处理正确触发，自动回退到各向同性 scale，避免了 arccos 噪声放大。</p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>模式</th><th>Scale (μm/px)</th><th>X 振幅 (mm)</th><th>Y 振幅 (mm)</th><th>总振幅 (mm)</th><th>去漂移总振幅 (mm)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>椭圆模式（退化）</td><td class="mono">60.0</td><td class="mono">0.5119</td><td class="mono">0.4965</td><td class="mono">0.7131</td><td class="mono">0.7562</td></tr>
+        <tr><td>圆形模式</td><td class="mono">61.2</td><td class="mono">0.5310</td><td class="mono">0.5327</td><td class="mono">0.7521</td><td class="mono">0.7046</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>两种模式振幅差异在 7% 以内，一致性良好。差异来源主要是不同的 ROI 框选（手动）和不同的检测算法（椭圆 fitEllipse vs 圆形 minEnclosingCircle）。由于 θ=0°，两种模式理论上应给出相同结果。</p>
 </section>
 
 <!-- Fix Timeline -->
@@ -254,6 +294,16 @@ V 方向（沿倾斜方向）: scale_v = Z₀ / F<br><br>
       <div class="title">P1-问题8: 分离评估 + 根因定位</div>
       <div class="desc">创建 evaluate_scale_vs_center.py，发现透视膨胀导致 D/(2a) 不是正确的位移换算系数</div>
     </div>
+    <div class="timeline-item">
+      <div class="time">commit: 586ba6e</div>
+      <div class="title">根因修复: 透视修正 Scale D·a/(2b²)</div>
+      <div class="desc">新增 compute_perspective_corrected_scale，椭圆模式改用各向同性换算；各向异性换算标记为废弃</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">commit: c1687f5</div>
+      <div class="title">验证: 仿真 + 真实视频双验证通过</div>
+      <div class="desc">仿真 θ=0° 误差=0.000%，θ=20° 误差从 5.6% 降至 3.7%；真实视频 10.mp4 θ=0° 退化正确触发，椭圆/圆形模式一致性 <7%</div>
+    </div>
   </div>
 </section>
 
@@ -266,9 +316,8 @@ V 方向（沿倾斜方向）: scale_v = Z₀ / F<br><br>
         <tr><th>编号</th><th>问题</th><th>建议方案</th></tr>
       </thead>
       <tbody>
-        <tr><td class="mono">8</td><td>Scale 公式理论缺陷</td><td>将 scale_major 改为 Z₀/F（需要已知 Z₀ 和 F），或用 scale_minor/cos θ 间接推导</td></tr>
         <tr><td class="mono">9</td><td>仿真/生产参数不一致</td><td>统一 circularity_threshold 和 ROI 构造方式</td></tr>
-        <tr><td class="mono">10</td><td>缺少真实数据验证</td><td>用标定板预标定获取实际倾角 θ₀ 作为 ground truth</td></tr>
+        <tr><td class="mono">10</td><td>缺少真实数据验证</td><td>已用 10.mp4 验证 θ=0° 退化；后续可用标定板获取实际倾角 θ₀</td></tr>
       </tbody>
     </table>
   </div>

@@ -177,4 +177,60 @@
   });
   window.addEventListener('resize', function() { chart3.resize(); });
 
+  // === Chart 4: Perspective Corrected Scale Verification ===
+  var chart4 = echarts.init(document.getElementById('chart-persp-verify'), null, { renderer: 'svg' });
+  chart4.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis', appendToBody: true },
+    legend: { data: ['透视修正 D·a/(2b²)', 'naive D/(2√ab)', '各向异性 D/(2a)', '理论 naive 误差'], textStyle: { color: muted }, top: 0 },
+    grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+    xAxis: {
+      type: 'category',
+      data: ['0°', '3°', '5°', '8°', '10°', '12°', '15°', '20°'],
+      name: '倾角 θ',
+      axisLine: { lineStyle: { color: rule } },
+      axisLabel: { color: muted }
+    },
+    yAxis: {
+      type: 'value',
+      name: '振幅误差 (%)',
+      axisLine: { lineStyle: { color: rule } },
+      axisLabel: { color: muted },
+      splitLine: { lineStyle: { color: rule, type: 'dashed' } }
+    },
+    series: [
+      {
+        name: '透视修正 D·a/(2b²)',
+        type: 'line',
+        data: [0.000, 0.656, 1.012, 1.434, 1.646, 1.805, 1.950, 3.707],
+        itemStyle: { color: success },
+        lineStyle: { width: 3 },
+        symbolSize: 8
+      },
+      {
+        name: 'naive D/(2√ab)',
+        type: 'line',
+        data: [0.729, 1.362, 1.684, 2.099, 3.009, 2.879, 3.447, 5.608],
+        itemStyle: { color: accent2 },
+        lineStyle: { width: 2 }
+      },
+      {
+        name: '各向异性 D/(2a)',
+        type: 'line',
+        data: [0.722, 1.354, 1.662, 2.074, 2.960, 2.803, 3.368, 5.252],
+        itemStyle: { color: accent },
+        lineStyle: { width: 2 }
+      },
+      {
+        name: '理论 naive 误差',
+        type: 'line',
+        data: [0, 0.069, 0.191, 0.490, 0.768, 1.111, 1.749, 3.159],
+        itemStyle: { color: muted },
+        lineStyle: { width: 1, type: 'dotted' },
+        symbol: 'none'
+      }
+    ]
+  });
+  window.addEventListener('resize', function() { chart4.resize(); });
+
 })();
