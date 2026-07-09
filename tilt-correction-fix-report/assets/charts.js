@@ -233,4 +233,68 @@
   });
   window.addEventListener('resize', function() { chart4.resize(); });
 
+  // === Chart 5: RPM vs Vibration Amplitude ===
+  var chart5 = echarts.init(document.getElementById('chart-rpm-amplitude'), null, { renderer: 'svg' });
+  chart5.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis', appendToBody: true },
+    legend: { data: ['X 振幅', 'Y 振幅', '总振幅', 'X 标准差', 'Y 标准差'], textStyle: { color: muted }, top: 0 },
+    grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+    xAxis: {
+      type: 'category',
+      data: ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100'],
+      name: 'RPM',
+      axisLine: { lineStyle: { color: rule } },
+      axisLabel: { color: muted }
+    },
+    yAxis: {
+      type: 'value',
+      name: '振幅 (mm)',
+      axisLine: { lineStyle: { color: rule } },
+      axisLabel: { color: muted },
+      splitLine: { lineStyle: { color: rule, type: 'dashed' } }
+    },
+    series: [
+      {
+        name: 'X 振幅',
+        type: 'bar',
+        data: [0.520, 0.494, 0.518, 0.411, 0.442, 0.465, 0.448, 0.442, 0.433, 0.407],
+        itemStyle: { color: accent },
+        barWidth: '15%'
+      },
+      {
+        name: 'Y 振幅',
+        type: 'bar',
+        data: [0.602, 0.895, 0.754, 0.567, 0.574, 0.466, 0.560, 0.745, 0.424, 0.565],
+        itemStyle: { color: accent2 },
+        barWidth: '15%'
+      },
+      {
+        name: '总振幅',
+        type: 'line',
+        data: [0.795, 1.022, 0.915, 0.700, 0.725, 0.659, 0.717, 0.867, 0.606, 0.696],
+        itemStyle: { color: success },
+        lineStyle: { width: 3 },
+        symbolSize: 8
+      },
+      {
+        name: 'X 标准差',
+        type: 'line',
+        data: [0.104, 0.086, 0.072, 0.073, 0.061, 0.073, 0.067, 0.072, 0.086, 0.069],
+        itemStyle: { color: muted },
+        lineStyle: { width: 1, type: 'dashed' },
+        symbolSize: 5
+      },
+      {
+        name: 'Y 标准差',
+        type: 'line',
+        data: [0.115, 0.165, 0.114, 0.108, 0.090, 0.081, 0.080, 0.095, 0.064, 0.094],
+        itemStyle: { color: danger },
+        lineStyle: { width: 1, type: 'dashed' },
+        symbolSize: 5
+      }
+    ]
+  });
+  window.addEventListener('resize', function() { chart5.resize(); });
+
 })();

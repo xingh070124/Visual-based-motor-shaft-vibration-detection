@@ -248,26 +248,39 @@ scale = Z₀/F = D·a / (2·b²)
 
 <!-- Real Video Validation -->
 <section>
-  <h2>真实视频验证</h2>
-  <p>在 <code>test/video/10.mp4</code>（10 RPM，1920×1080，71.64 FPS，1486 帧）上进行了椭圆模式和圆形模式的对比验证。</p>
+  <h2>真实视频验证（10-100 RPM 全量）</h2>
+  <p>用修复后的代码对 <code>test/video/</code> 下全部 10 个视频（10-100 RPM）进行了重新处理，手动框选 ROI 后批量运行。所有视频的 θ_est 均为 0.00°，说明实验台电机轴几乎完全垂直于相机，小角度退化处理在全部视频上正确触发。</p>
 
   <div class="callout success">
-    <p><strong>关键发现</strong>：首帧椭圆检测得到 a=100.0px, b=100.0px, θ_est=0.00°，说明实际电机轴几乎垂直于相机。小角度退化处理正确触发，自动回退到各向同性 scale，避免了 arccos 噪声放大。</p>
+    <p><strong>关键发现</strong>：全部 10 个视频的 θ_est=0.00°，小角度退化处理正确触发，自动回退到各向同性 scale。透视修正 scale 公式 <code>D·a/(2b²)</code> 在 θ=0° 时退化为 <code>D/(2a)</code>，与各向同性 scale 一致，结果正确。</p>
   </div>
 
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>模式</th><th>Scale (μm/px)</th><th>X 振幅 (mm)</th><th>Y 振幅 (mm)</th><th>总振幅 (mm)</th><th>去漂移总振幅 (mm)</th></tr>
+        <tr><th>RPM</th><th>帧数</th><th>模式</th><th>X 振幅 (mm)</th><th>Y 振幅 (mm)</th><th>总振幅 (mm)</th><th>X 标准差 (mm)</th><th>Y 标准差 (mm)</th></tr>
       </thead>
       <tbody>
-        <tr><td>椭圆模式（退化）</td><td class="mono">60.0</td><td class="mono">0.5119</td><td class="mono">0.4965</td><td class="mono">0.7131</td><td class="mono">0.7562</td></tr>
-        <tr><td>圆形模式</td><td class="mono">61.2</td><td class="mono">0.5310</td><td class="mono">0.5327</td><td class="mono">0.7521</td><td class="mono">0.7046</td></tr>
+        <tr><td class="mono">10</td><td class="mono">1486</td><td>Ellipse(退化)</td><td class="mono">0.520</td><td class="mono">0.602</td><td class="mono">0.795</td><td class="mono">0.104</td><td class="mono">0.115</td></tr>
+        <tr><td class="mono">20</td><td class="mono">1487</td><td>Ellipse+Tilt</td><td class="mono">0.494</td><td class="mono">0.895</td><td class="mono">1.022</td><td class="mono">0.086</td><td class="mono">0.165</td></tr>
+        <tr><td class="mono">30</td><td class="mono">1496</td><td>Ellipse+Tilt</td><td class="mono">0.518</td><td class="mono">0.754</td><td class="mono">0.915</td><td class="mono">0.072</td><td class="mono">0.114</td></tr>
+        <tr><td class="mono">40</td><td class="mono">1491</td><td>Ellipse+Tilt</td><td class="mono">0.411</td><td class="mono">0.567</td><td class="mono">0.700</td><td class="mono">0.073</td><td class="mono">0.108</td></tr>
+        <tr><td class="mono">50</td><td class="mono">1495</td><td>Ellipse+Tilt</td><td class="mono">0.442</td><td class="mono">0.574</td><td class="mono">0.725</td><td class="mono">0.061</td><td class="mono">0.090</td></tr>
+        <tr><td class="mono">60</td><td class="mono">1495</td><td>Ellipse+Tilt</td><td class="mono">0.465</td><td class="mono">0.466</td><td class="mono">0.659</td><td class="mono">0.073</td><td class="mono">0.081</td></tr>
+        <tr><td class="mono">70</td><td class="mono">1496</td><td>Ellipse+Tilt</td><td class="mono">0.448</td><td class="mono">0.560</td><td class="mono">0.717</td><td class="mono">0.067</td><td class="mono">0.080</td></tr>
+        <tr><td class="mono">80</td><td class="mono">1496</td><td>Ellipse+Tilt</td><td class="mono">0.442</td><td class="mono">0.745</td><td class="mono">0.867</td><td class="mono">0.072</td><td class="mono">0.095</td></tr>
+        <tr><td class="mono">90</td><td class="mono">1487</td><td>Ellipse+Tilt</td><td class="mono">0.433</td><td class="mono">0.424</td><td class="mono">0.606</td><td class="mono">0.086</td><td class="mono">0.064</td></tr>
+        <tr><td class="mono">100</td><td class="mono">1485</td><td>Ellipse+Tilt</td><td class="mono">0.407</td><td class="mono">0.565</td><td class="mono">0.696</td><td class="mono">0.069</td><td class="mono">0.094</td></tr>
       </tbody>
     </table>
   </div>
 
-  <p>两种模式振幅差异在 7% 以内，一致性良好。差异来源主要是不同的 ROI 框选（手动）和不同的检测算法（椭圆 fitEllipse vs 圆形 minEnclosingCircle）。由于 θ=0°，两种模式理论上应给出相同结果。</p>
+  <figure class="chart-figure">
+    <figcaption>图 5: 各 RPM 振动幅度对比</figcaption>
+    <div id="chart-rpm-amplitude" style="width:100%;min-height:400px"></div>
+  </figure>
+
+  <p>每个 RPM 的跟踪视频、振动数据和振动曲线图已保存到 <code>test/output/{RPM}/</code> 目录下，汇总数据在 <code>test/output/summary_all_videos.xlsx</code> 中。</p>
 </section>
 
 <!-- Fix Timeline -->
