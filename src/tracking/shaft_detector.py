@@ -302,6 +302,10 @@ def detect_ellipse_in_roi(
         (cx_roi, cy_roi), (width, height), angle = cv2.fitEllipse(best_contour)
         a = max(width, height) / 2.0
         b = min(width, height) / 2.0
+        # cv2.fitEllipse 的 angle 对应 width 方向
+        # 当 height > width 时，angle 指向短轴方向，需 +90 归一化为长轴方向
+        if height > width:
+            angle = (angle + 90) % 180
 
         # 半径校验：收紧到 ±15%，防止检测到轴承外圈等更大圆
         if a > expected_radius_pixels * 1.15 or a < expected_radius_pixels * 0.75:

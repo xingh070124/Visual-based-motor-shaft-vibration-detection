@@ -59,17 +59,15 @@ def load_gt(gt_path):
     return gt
 
 
-def correct_ellipse_in_image(img, ellipse_params, cx_expected, cy_expected):
-    """用各向异性缩放把椭圆校正为圆。
+def correct_ellipse_in_image(img, ellipse_params):
+    """用仿射变换把椭圆校正为圆。
 
-    直接用 cv2.warpAffine 构造仿射变换：
-    把检测到的椭圆 (a, b, angle) 校正为半径 b 的圆。
-    方法：沿椭圆长轴方向压缩 a→b。
+    沿椭圆长轴方向压缩 a→b，使椭圆变为半径 b 的圆。
+    使用显式 2x2 变换矩阵构造，避免分步矩阵乘法中的方向错误。
 
     Args:
         img: 输入图像 (BGR)
-        ellipse_params: (cx, cy, a, b, angle) — 椭圆中心和半轴
-        cx_expected, cy_expected: 主点位置（用于偏移校正）
+        ellipse_params: (cx, cy, a, b, angle) — 椭圆中心、半轴和长轴方向角
 
     Returns:
         corrected_img: 校正后图像
@@ -82,43 +80,52 @@ def correct_ellipse_in_image(img, ellipse_params, cx_expected, cy_expected):
     # 缩放比：长轴方向压缩 b/a
     scale = b / a  # < 1
 
-    # 用 OpenCV 的 getRotationMatrix2D 构造旋转 + 缩放
-    # 先绕 (cx, cy) 旋转 -angle，然后在 X 方向缩放 scale，再旋转回 angle
-    # 等价于：以 (cx, cy) 为中心，沿 angle 方向缩放 scale
+    # angle 来自 cv2.fitEllipse，是长轴方向相对于水平轴的角度（度）
+    # cv2.fitEllipse 的角度约定：逆时针为正（标准数学惯例），在图像坐标系（Y朝下）中视觉上为顺时针
+    rad = np.radians(angle)
+    cos_r = np.cos(rad)
+    sin_r = np.sin(rad)
 
-    # fitEllipse 的 angle 是图像坐标系（Y 朝下）下的顺时针角度
-    # 旋转矩阵需要用 -angle 来对齐到数学惯例
-    rad = math.radians(-angle)  # 关键修复：取反角度
-    cos_a = math.cos(rad)
-    sin_a = math.sin(rad)
+    # 步骤：以 (cx, cy) 为中心
+    # 1. 旋转使长轴对齐到 X 轴：R(-angle) = [[cos, sin], [-sin, cos]]
+    # 2. X 方向缩放 scale：S = diag(scale, 1)
+    # 3. 旋转回：R(angle) = [[cos, -sin], [sin, cos]]
+    # 组合 T = R(angle) @ S @ R(-angle)
 
-    # 分步构造 3x3 仿射矩阵
-    # 步骤：1. 平移到原点 2. 旋转对齐长轴到X 3. X方向缩放 4. 旋转回 5. 平移回
-    M1 = np.array([[1, 0, -cx], [0, 1, -cy], [0, 0, 1]], dtype=np.float32)
-    M2 = np.array([[cos_a, sin_a, 0], [-sin_a, cos_a, 0], [0, 0, 1]], dtype=np.float32)
-    M3 = np.array([[scale, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
-    M4 = np.array([[cos_a, -sin_a, 0], [sin_a, cos_a, 0], [0, 0, 1]], dtype=np.float32)
-    M5 = np.array([[1, 0, cx], [0, 1, cy], [0, 0, 1]], dtype=np.float32)
+    R_align = np.array([[cos_r, sin_r],
+                        [-sin_r, cos_r]])  # R(-angle): 对齐长轴到X
+    S = np.array([[scale, 0],
+                  [0, 1.0]])              # X方向缩放
+    R_back = np.array([[cos_r, -sin_r],
+                       [sin_r, cos_r]])    # R(angle): 旋转回
 
-    M_full = M5 @ M4 @ M3 @ M2 @ M1
-    M_2x3 = M_full[:2, :]
+    T = R_back @ S @ R_align  # 2x2 变换矩阵
+
+    # 构造 2x3 仿射矩阵，保持中心点不变
+    M = np.zeros((2, 3), dtype=np.float32)
+    M[0, 0] = T[0, 0]
+    M[0, 1] = T[0, 1]
+    M[1, 0] = T[1, 0]
+    M[1, 1] = T[1, 1]
+    M[0, 2] = cx - T[0, 0] * cx - T[0, 1] * cy
+    M[1, 2] = cy - T[1, 0] * cx - T[1, 1] * cy
 
     h, w = img.shape[:2]
-    corrected = cv2.warpAffine(img, M_2x3, (w, h), flags=cv2.INTER_LINEAR,
+    corrected = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR,
                                borderMode=cv2.BORDER_REPLICATE)
     return corrected
 
 
 def evaluate_closure(img_path, gt_dict, expected_radius):
-    """对单张图做闭环验证。
+    """对单张图做真实的图像级闭环验证。
 
-    改为数学验证方式：
-    1. 检测原始椭圆 → (a, b, angle, cx, cy)
+    执行完整的闭环：
+    1. 检测原始椭圆 → (cx, cy, a, b, angle)
     2. 反演 θ_est = arccos(b/a)
-    3. 用 θ_est 构造校正矩阵 H（数学变换，不操作图像）
-    4. 对椭圆参数做数学校正：a' = a * (b/a) = b, b' = b → a'/b' = 1
-    5. 加入检测噪声模拟：校正后 a'/b' 偏离 1 的程度 = 检测精度
-    6. 振动保持性：校正矩阵对中心位移的影响（应不变）
+    3. 用 correct_ellipse_in_image 对图像做仿射校正（warpAffine）
+    4. 在校正后图像上重新检测椭圆 → (cx', cy', a', b', angle')
+    5. 检查 a'/b' 是否趋近 1（补偿有效性）
+    6. 检查中心位移是否保持（振动保持性）
     """
     img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
@@ -135,47 +142,34 @@ def evaluate_closure(img_path, gt_dict, expected_radius):
     theta_est = estimate_tilt_angle(a1, b1)
     ratio_before = a1 / b1 if b1 > 0 else 1.0
 
-    # === Step 2: 数学校正 ===
-    # 校正矩阵把长轴压缩到短轴长度
-    # 校正后的椭圆参数（理论值）：
-    #   a_corrected = a * (b/a) = b
-    #   b_corrected = b
-    #   → a_corrected / b_corrected = 1
-    # 但实际检测有噪声，所以加入噪声模拟
-    # 检测噪声：a 和 b 各有 ~0.5% 的随机误差
-    noise_a = np.random.normal(1.0, 0.005)
-    noise_b = np.random.normal(1.0, 0.005)
-    a_corrected = b1 * noise_a  # 校正后长轴 = 短轴（加噪声）
-    b_corrected = b1 * noise_b  # 校正后短轴不变
-    ratio_after = a_corrected / b_corrected if b_corrected > 0 else 1.0
+    # === Step 2: 图像校正 ===
+    ellipse_params = (cx1, cy1, a1, b1, angle1)
+    corrected_img = correct_ellipse_in_image(img, ellipse_params)
 
-    # === Step 3: 振动保持性 ===
-    # 校正矩阵 H = R * S * R^{-1} 是线性变换
-    # 对于中心位移 (du, dv)，校正后：
-    #   (du', dv') = H_2x2 @ (du, dv)
-    # 但 H 的构造使得中心点不变（平移部分抵消）
-    # 所以振动保持率 = 1（理论上）
-    # 加入检测噪声模拟
+    # === Step 3: 校正后图像重新检测椭圆 ===
+    cx2, cy2, a2, b2, angle2 = detect_ellipse_in_roi(
+        corrected_img, roi_box, expected_radius, return_params=True
+    )
+    ratio_after = a2 / b2 if b2 > 0 else 1.0
+
+    # === Step 4: 振动保持性验证 ===
+    # 比较校正前后椭圆中心的位移（反映振动信号是否被保持）
     du1 = cx1 - CX
     dv1 = cy1 - CY
+    du2 = cx2 - CX
+    dv2 = cy2 - CY
     disp_before = math.sqrt(du1 ** 2 + dv1 ** 2)
-
-    # 校正矩阵对位移的影响（理论：保持不变，因为缩放只改变形状不改变中心）
-    # 但实际中 fitEllipse 的中心在校正后可能有微小偏移
-    # 模拟：校正后中心偏移 ~0.05px（插值精度）
-    center_noise = 0.05
-    du2 = du1 + np.random.normal(0, center_noise)
-    dv2 = dv1 + np.random.normal(0, center_noise)
     disp_after = math.sqrt(du2 ** 2 + dv2 ** 2)
-    vib_preservation = disp_after / disp_before if disp_before > 0 else 1.0
+    vib_preservation = disp_after / disp_before if disp_before > 1e-6 else 1.0
 
-    center_shift = math.sqrt((du2 - du1) ** 2 + (dv2 - dv1) ** 2)
+    center_shift = math.sqrt((cx2 - cx1) ** 2 + (cy2 - cy1) ** 2)
 
-    # === Step 4: 各向异性 scale 验证 ===
-    # 校正前 scale 误差（naive）
-    naive_scale_err = abs(1.0 / math.sqrt(math.cos(math.radians(theta_est))) - 1.0) if theta_est > 0 else 0.0
-    # 校正后 scale 误差（各向异性）→ 理论为 0
-    aniso_scale_err = 0.0  # 理论值为 0
+    # === Step 5: scale 误差分析 ===
+    # naive scale 误差：1/sqrt(cos θ) - 1
+    naive_scale_err = abs(1.0 / math.sqrt(math.cos(math.radians(theta_est))) - 1.0) if theta_est > 0.01 else 0.0
+    # 各向异性 scale 误差：理论上为 0，实际取决于检测精度
+    # 校正后 a'/b' 应为 1，偏离量反映检测+校正的综合误差
+    aniso_scale_err = abs(ratio_after - 1.0)
 
     return {
         'image': os.path.basename(img_path),
@@ -184,10 +178,15 @@ def evaluate_closure(img_path, gt_dict, expected_radius):
         'a_before': a1,
         'b_before': b1,
         'ratio_before': ratio_before,
-        'a_after': a_corrected,
-        'b_after': b_corrected,
+        'a_after': a2,
+        'b_after': b2,
         'ratio_after': ratio_after,
         'angle_before': angle1,
+        'angle_after': angle2,
+        'cx_before': cx1,
+        'cy_before': cy1,
+        'cx_after': cx2,
+        'cy_after': cy2,
         'center_shift_px': center_shift,
         'disp_before_px': disp_before,
         'disp_after_px': disp_after,
