@@ -44,7 +44,8 @@ from src.tracking.coordinate import (
     compute_scale_m_per_px,
     pixel_to_mm,
     estimate_tilt_angle,
-    pixel_to_mm_anisotropic
+    pixel_to_mm_anisotropic,
+    compute_perspective_corrected_scale
 )
 from src.vibration.analyzer import (
     compute_vibration_amplitude,
@@ -636,25 +637,29 @@ def process_single_video(
     scale_minor = None
 
     if use_ellipse_correction:
-        # 各向异性 scale：长轴 D/(2a)，短轴 D/(2b)
+        # 透视修正的各向同性 scale：D·a/(2b²)
+        # 透视投影下长短轴均被膨胀，D/(2a) 低估了真实 scale
+        # 正确的位移换算系数为 Z₀/F = D·a/(2b²)（各方向相同）
         if init_a > 0 and init_b > 0:
-            scale_major = config.SHAFT_DIAMETER_M / (2.0 * init_a)
-            scale_minor = config.SHAFT_DIAMETER_M / (2.0 * init_b)
-            scale = scale_major  # 用于 Summary 输出
-            print(
-                f"  [CALIB] 各向异性比例尺: a={init_a:.1f}px, b={init_b:.1f}px → "
-                f"scale_major={scale_major*1e6:.1f} μm/px, "
-                f"scale_minor={scale_minor*1e6:.1f} μm/px "
-                f"(θ_est={init_theta:.2f}°)"
+            scale = compute_perspective_corrected_scale(
+                config.SHAFT_DIAMETER_M, init_a, init_b
             )
+            print(
+                f"  [CALIB] 透视修正比例尺: a={init_a:.1f}px, b={init_b:.1f}px → "
+                f"scale={scale*1e6:.1f} μm/px "
+                f"(θ_est={init_theta:.2f}°, 各向同性)"
+            )
+            # 对比旧公式（仅供诊断）
+            old_scale_major = config.SHAFT_DIAMETER_M / (2.0 * init_a)
+            old_scale_minor = config.SHAFT_DIAMETER_M / (2.0 * init_b)
+            print(f"  [CALIB]   旧公式对比: D/(2a)={old_scale_major*1e6:.1f}, "
+                  f"D/(2b)={old_scale_minor*1e6:.1f} μm/px "
+                  f"(差 {abs(scale-old_scale_major)/scale*100:.1f}%)")
             for row in results:
                 # row: [frame_idx, px, py, a, b, angle]
                 px, py = row[1], row[2]
-                # 使用首帧固定角度做坐标换算（避免逐帧角度噪声引入不一致误差）
-                cam_x, cam_y = pixel_to_mm_anisotropic(
-                    px, py, config.CX, config.CY,
-                    scale_major, scale_minor, init_angle
-                )
+                # 各向同性换算（位移 scale 在所有方向相同）
+                cam_x, cam_y = pixel_to_mm(px, py, config.CX, config.CY, scale)
                 row.append(cam_x)
                 row.append(cam_y)
         else:
