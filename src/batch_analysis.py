@@ -2,8 +2,8 @@
 
 对每个视频：
     1. 提取首帧 → 用户选择 ROI（首次选择后可复用）
-    2. STARK-ST 跟踪 + 轮廓圆心检测
-    3. 像素坐标 → 相机坐标转换
+    2. STARK-ST 跟踪 + 轮廓圆心检测（或椭圆检测+倾斜补偿）
+    3. 像素坐标 → 相机坐标转换（等向性或各向异性 scale）
     4. 输出 Excel 数据
     5. 绘制振动曲线图 (PNG)
     6. 渲染带跟踪标记的输出视频 (MP4)
@@ -12,6 +12,7 @@
     python -m src.batch_analysis                # 交互式选择 ROI
     python -m src.batch_analysis --no-stark     # 使用 OpenCV CSRT 备选跟踪器
     python -m src.batch_analysis --skip-render  # 跳过视频渲染（仅输出数据和图）
+    python -m src.batch_analysis --ellipse-correct  # 启用椭圆检测+倾斜补偿
 """
 
 import os
@@ -36,9 +37,15 @@ if _PROJECT_ROOT not in sys.path:
 from src import config
 from src.tracking.shaft_detector import (
     detect_shaft_center_in_roi,
-    estimate_expected_radius_from_roi
+    estimate_expected_radius_from_roi,
+    detect_ellipse_in_roi
 )
-from src.tracking.coordinate import compute_scale_m_per_px, pixel_to_mm
+from src.tracking.coordinate import (
+    compute_scale_m_per_px,
+    pixel_to_mm,
+    estimate_tilt_angle,
+    pixel_to_mm_anisotropic
+)
 from src.vibration.analyzer import (
     compute_vibration_amplitude,
     print_vibration_result
@@ -285,11 +292,13 @@ def process_single_video(
     init_roi: Optional[List[int]],
     tracker_factory,
     skip_render: bool = False,
-    step: int = 1
+    step: int = 1,
+    use_ellipse_correction: bool = False
 ) -> Tuple[Optional[pd.DataFrame], Optional[Dict], Optional[List[int]]]:
     """处理单个视频，返回 (DataFrame, vibration_dict, used_roi)。
 
     比例尺通过轴径自标定：用 ROI 估算检测先验 → 前 N 帧中位数半径 → scale。
+    当 use_ellipse_correction=True 时，使用椭圆检测 + 各向异性 scale 补偿倾斜误差。
 
     Args:
         video_path: 视频文件路径
@@ -297,6 +306,8 @@ def process_single_video(
         init_roi: 初始 ROI [x, y, w, h]，None 则交互式选择
         tracker_factory: 无参函数，返回跟踪器实例
         skip_render: 是否跳过视频渲染
+        step: 帧采样步长
+        use_ellipse_correction: 是否启用椭圆检测+倾斜补偿
 
     Returns:
         (df, vibration, used_roi)
@@ -344,19 +355,47 @@ def process_single_video(
 
     # ---- 首帧圆心检测（ROI 先验 → 自适应） ----
     expected_radius = estimate_expected_radius_from_roi(used_roi)
-    init_center_x, init_center_y, init_radius = detect_shaft_center_in_roi(
-        first_frame, used_roi,
-        expected_radius_pixels=expected_radius,
-        circularity_threshold=config.CIRCULARITY_THRESHOLD,
-        radius_tolerance=config.RADIUS_TOLERANCE,
-        min_contour_area=config.MIN_CONTOUR_AREA,
-        canny_low=config.CANNY_LOW,
-        canny_high=config.CANNY_HIGH,
-        blur_kernel=config.GAUSSIAN_BLUR_KERNEL,
-        return_radius=True
-    )
-    if init_radius > 0:
-        expected_radius = init_radius  # 首帧检测半径作为先验
+
+    # 椭圆模式参数初始化
+    init_a = 0.0
+    init_b = 0.0
+    init_angle = 0.0
+    init_theta = 0.0
+
+    if use_ellipse_correction:
+        init_center_x, init_center_y, init_a, init_b, init_angle = \
+            detect_ellipse_in_roi(
+                first_frame, used_roi,
+                expected_radius_pixels=expected_radius,
+                circularity_threshold=config.CIRCULARITY_THRESHOLD,
+                min_contour_area=config.MIN_CONTOUR_AREA,
+                canny_low=config.CANNY_LOW,
+                canny_high=config.CANNY_HIGH,
+                blur_kernel=config.GAUSSIAN_BLUR_KERNEL,
+                return_params=True
+            )
+        init_theta = estimate_tilt_angle(init_a, init_b)
+        # 用半长轴作为半径先验
+        init_radius = init_a if init_a > 0 else expected_radius
+        if init_a > 0:
+            expected_radius = init_a
+        print(f"  [ELLIPSE] 首帧: a={init_a:.1f}, b={init_b:.1f}, "
+              f"angle={init_angle:.1f}°, θ_est={init_theta:.2f}°")
+    else:
+        init_center_x, init_center_y, init_radius = detect_shaft_center_in_roi(
+            first_frame, used_roi,
+            expected_radius_pixels=expected_radius,
+            circularity_threshold=config.CIRCULARITY_THRESHOLD,
+            radius_tolerance=config.RADIUS_TOLERANCE,
+            min_contour_area=config.MIN_CONTOUR_AREA,
+            canny_low=config.CANNY_LOW,
+            canny_high=config.CANNY_HIGH,
+            blur_kernel=config.GAUSSIAN_BLUR_KERNEL,
+            return_radius=True
+        )
+        if init_radius > 0:
+            expected_radius = init_radius  # 首帧检测半径作为先验
+
     # 滑动窗口中位数（替代逐帧自适应更新，防止正反馈崩溃）
     radius_history = deque(maxlen=config.RADIUS_HISTORY_WINDOW)
     init_radius_for_scale = init_radius if init_radius > 0 else expected_radius  # 比例尺标定用
@@ -418,27 +457,47 @@ def process_single_video(
     last_cx = used_roi[0] + used_roi[2] / 2
     last_cy = used_roi[1] + used_roi[3] / 2
     last_radius = expected_radius
+    # 椭圆模式渲染状态
+    last_a = 0.0
+    last_b = 0.0
+    last_angle = 0.0
+    last_theta = 0.0
 
     # 首帧：用 STARK bbox 中心作为初始位置
     init_px = last_cx
     init_py = last_cy
-    # 尝试在首帧 ROI 内检测圆用于显示 & 半径基准
-    _, _, vis_r = detect_shaft_center_in_roi(
-        first_frame, used_roi, expected_radius_pixels=expected_radius,
-        circularity_threshold=0.85,
-        radius_tolerance=0.25,
-        min_contour_area=config.MIN_CONTOUR_AREA,
-        canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
-        blur_kernel=config.GAUSSIAN_BLUR_KERNEL, return_radius=True
-    )
-    last_radius = vis_r if vis_r > 0 else last_radius
 
-    results.append([1, init_px, init_py, vis_r])
+    if use_ellipse_correction:
+        # 椭圆模式：首帧检测已在上面完成，直接使用 init_a/init_b/init_angle
+        vis_a = init_a
+        vis_b = init_b
+        vis_angle = init_angle
+        vis_theta = init_theta
+        last_radius = init_a if init_a > 0 else last_radius
+        results.append([1, init_px, init_py, vis_a, vis_b, vis_angle])
+    else:
+        # 圆形模式：首帧额外检测用于显示
+        _, _, vis_r = detect_shaft_center_in_roi(
+            first_frame, used_roi, expected_radius_pixels=expected_radius,
+            circularity_threshold=0.85,
+            radius_tolerance=0.25,
+            min_contour_area=config.MIN_CONTOUR_AREA,
+            canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
+            blur_kernel=config.GAUSSIAN_BLUR_KERNEL, return_radius=True
+        )
+        last_radius = vis_r if vis_r > 0 else last_radius
+        results.append([1, init_px, init_py, vis_r])
 
     # 渲染首帧
     if writer is not None:
+        if use_ellipse_correction:
+            ellipse_info = {'a': vis_a, 'b': vis_b, 'angle': vis_angle,
+                            'theta_est': vis_theta}
+        else:
+            ellipse_info = None
         rendered = _render_frame(
-            first_frame, used_roi, last_cx, last_cy, last_radius, 1
+            first_frame, used_roi, last_cx, last_cy, last_radius, 1,
+            ellipse_info=ellipse_info
         )
         writer.write(rendered)
 
@@ -453,8 +512,14 @@ def process_single_video(
         # 帧采样：跳过不需要处理的帧
         if (frame_idx - 1) % step != 0:
             if writer is not None:
+                if use_ellipse_correction:
+                    skip_ellipse = {'a': last_a, 'b': last_b,
+                                    'angle': last_angle, 'theta_est': last_theta}
+                else:
+                    skip_ellipse = None
                 rendered = _render_frame(
-                    frame, last_bbox, last_cx, last_cy, last_radius, frame_idx
+                    frame, last_bbox, last_cx, last_cy, last_radius, frame_idx,
+                    ellipse_info=skip_ellipse
                 )
                 writer.write(rendered)
             continue
@@ -470,15 +535,39 @@ def process_single_video(
         track_cx = pred_box[0] + pred_box[2] / 2
         track_cy = pred_box[1] + pred_box[3] / 2
 
-        # 圆检测：用于可视化渲染 + 半径基准
-        _, _, vis_radius = detect_shaft_center_in_roi(
-            frame, pred_box, expected_radius_pixels=expected_radius,
-            circularity_threshold=0.85,
-            radius_tolerance=0.25,
-            min_contour_area=config.MIN_CONTOUR_AREA,
-            canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
-            blur_kernel=config.GAUSSIAN_BLUR_KERNEL, return_radius=True
-        )
+        if use_ellipse_correction:
+            # 椭圆检测：获取长短轴和倾角
+            _, _, vis_a, vis_b, vis_angle = detect_ellipse_in_roi(
+                frame, pred_box,
+                expected_radius_pixels=expected_radius,
+                circularity_threshold=0.3,
+                min_contour_area=config.MIN_CONTOUR_AREA,
+                canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
+                blur_kernel=config.GAUSSIAN_BLUR_KERNEL,
+                return_params=True
+            )
+            vis_theta = estimate_tilt_angle(vis_a, vis_b)
+
+            # 半长轴用于半径历史
+            vis_radius = vis_a
+
+            # 更新椭圆渲染状态
+            if vis_a > 0:
+                last_a = vis_a
+                last_b = vis_b
+                last_angle = vis_angle
+                last_theta = vis_theta
+        else:
+            # 圆检测：用于可视化渲染 + 半径基准
+            _, _, vis_radius = detect_shaft_center_in_roi(
+                frame, pred_box, expected_radius_pixels=expected_radius,
+                circularity_threshold=0.85,
+                radius_tolerance=0.25,
+                min_contour_area=config.MIN_CONTOUR_AREA,
+                canny_low=config.CANNY_LOW, canny_high=config.CANNY_HIGH,
+                blur_kernel=config.GAUSSIAN_BLUR_KERNEL, return_radius=True
+            )
+
         # 滑动窗口中位数更新（替代逐帧自适应，防止正反馈崩溃）
         if vis_radius > 0:
             # 异常检测：偏离首帧半径超过阈值则跳过
@@ -488,18 +577,28 @@ def process_single_video(
             if len(radius_history) >= config.RADIUS_HISTORY_MIN:
                 expected_radius = float(np.median(list(radius_history)))
 
-        # 更新渲染状态（渲染用 last_radius 不归零，保持画圆连续）
+        # 更新渲染状态
         last_bbox = pred_box
         last_cx, last_cy = track_cx, track_cy
         last_radius = vis_radius if vis_radius > 0 else last_radius
 
         # 存原始数据（延迟到标定 scale 后再换算）
-        results.append([frame_idx, track_cx, track_cy, vis_radius])
+        if use_ellipse_correction:
+            results.append([frame_idx, track_cx, track_cy,
+                           vis_a, vis_b, vis_angle])
+        else:
+            results.append([frame_idx, track_cx, track_cy, vis_radius])
 
         # 渲染
         if writer is not None:
+            if use_ellipse_correction:
+                frame_ellipse = {'a': last_a, 'b': last_b,
+                                 'angle': last_angle, 'theta_est': last_theta}
+            else:
+                frame_ellipse = None
             rendered = _render_frame(
-                frame, pred_box, track_cx, track_cy, last_radius, frame_idx
+                frame, pred_box, track_cx, track_cy, last_radius, frame_idx,
+                ellipse_info=frame_ellipse
             )
             writer.write(rendered)
 
@@ -513,31 +612,70 @@ def process_single_video(
 
     print(f"\r  处理完成! ({frame_idx}/{total_frames} 帧)")
 
-    # ---- 首帧半径比例尺标定 + 批量坐标换算 ----
-    # 改进：用首帧检测半径标定（最清晰、无运动模糊），替代前50帧中位数
+    # ---- 首帧比例尺标定 + 批量坐标换算 ----
     scale = None
-    if init_radius_for_scale > 0:
-        scale = compute_scale_m_per_px(config.SHAFT_DIAMETER_M, init_radius_for_scale)
-        print(
-            f"  [CALIB] 比例尺: 首帧半径={init_radius_for_scale:.1f} px → "
-            f"scale={scale*1e6:.1f} μm/px "
-            f"(轴径{config.SHAFT_DIAMETER_MM:.0f}mm 为唯一先验，不依赖 Z)"
-        )
-        for row in results:
-            cam_x, cam_y = pixel_to_mm(row[1], row[2], config.CX, config.CY, scale)
-            row.append(cam_x)
-            row.append(cam_y)
+    scale_major = None
+    scale_minor = None
+
+    if use_ellipse_correction:
+        # 各向异性 scale：长轴 D/(2a)，短轴 D/(2b)
+        if init_a > 0 and init_b > 0:
+            scale_major = config.SHAFT_DIAMETER_M / (2.0 * init_a)
+            scale_minor = config.SHAFT_DIAMETER_M / (2.0 * init_b)
+            scale = scale_major  # 用于 Summary 输出
+            print(
+                f"  [CALIB] 各向异性比例尺: a={init_a:.1f}px, b={init_b:.1f}px → "
+                f"scale_major={scale_major*1e6:.1f} μm/px, "
+                f"scale_minor={scale_minor*1e6:.1f} μm/px "
+                f"(θ_est={init_theta:.2f}°)"
+            )
+            for row in results:
+                # row: [frame_idx, px, py, a, b, angle]
+                px, py, ell_angle = row[1], row[2], row[5]
+                cam_x, cam_y = pixel_to_mm_anisotropic(
+                    px, py, config.CX, config.CY,
+                    scale_major, scale_minor, ell_angle
+                )
+                row.append(cam_x)
+                row.append(cam_y)
+        else:
+            print("  [WARN] 首帧椭圆检测失败，换算失败")
+            for row in results:
+                row.append(0.0)
+                row.append(0.0)
     else:
-        print("  [WARN] 所有帧均未检测到圆，换算失败")
-        for row in results:
-            row.append(0.0)
-            row.append(0.0)
+        # 等向性 scale：D/(2R)
+        if init_radius_for_scale > 0:
+            scale = compute_scale_m_per_px(config.SHAFT_DIAMETER_M, init_radius_for_scale)
+            print(
+                f"  [CALIB] 比例尺: 首帧半径={init_radius_for_scale:.1f} px → "
+                f"scale={scale*1e6:.1f} μm/px "
+                f"(轴径{config.SHAFT_DIAMETER_MM:.0f}mm 为唯一先验，不依赖 Z)"
+            )
+            for row in results:
+                cam_x, cam_y = pixel_to_mm(row[1], row[2], config.CX, config.CY, scale)
+                row.append(cam_x)
+                row.append(cam_y)
+        else:
+            print("  [WARN] 所有帧均未检测到圆，换算失败")
+            for row in results:
+                row.append(0.0)
+                row.append(0.0)
 
     # ---- 保存 Excel ----
-    df = pd.DataFrame(
-        results,
-        columns=["Frame", "Pixel_X", "Pixel_Y", "Radius (px)", "Cam_X (m)", "Cam_Y (m)"]
-    )
+    if use_ellipse_correction:
+        df = pd.DataFrame(
+            results,
+            columns=["Frame", "Pixel_X", "Pixel_Y", "SemiMajor (px)",
+                     "SemiMinor (px)", "EllipseAngle (deg)",
+                     "Cam_X (m)", "Cam_Y (m)"]
+        )
+    else:
+        df = pd.DataFrame(
+            results,
+            columns=["Frame", "Pixel_X", "Pixel_Y", "Radius (px)",
+                     "Cam_X (m)", "Cam_Y (m)"]
+        )
     xlsx_path = os.path.join(output_dir, f"{video_name}_data.xlsx")
 
     # 振动分析
@@ -550,13 +688,24 @@ def process_single_video(
         df.to_excel(writer_xl, sheet_name='Raw Data', index=False)
 
         # Summary sheet
-        summary = pd.DataFrame([
+        summary_rows = [
             ["Video", video_name],
             ["Total Frames", len(df)],
             ["FPS", f"{fps:.2f}"],
             ["Resolution", f"{frame_w}x{frame_h}"],
             ["ROI", str(used_roi)],
             ["Scale (μm/px)", f"{scale*1e6:.1f}" if scale else "N/A"],
+        ]
+        if use_ellipse_correction:
+            summary_rows.extend([
+                ["Mode", "Ellipse + Tilt Correction"],
+                ["Semi-Major a (px)", f"{init_a:.2f}"],
+                ["Semi-Minor b (px)", f"{init_b:.2f}"],
+                ["Tilt θ_est (deg)", f"{init_theta:.2f}"],
+                ["Scale Major (μm/px)", f"{scale_major*1e6:.1f}" if scale_major else "N/A"],
+                ["Scale Minor (μm/px)", f"{scale_minor*1e6:.1f}" if scale_minor else "N/A"],
+            ])
+        summary_rows.extend([
             ["", ""],
             ["X Amplitude (mm)", f"{vibration['amplitude_x_mm']:.4f}"],
             ["Y Amplitude (mm)", f"{vibration['amplitude_y_mm']:.4f}"],
@@ -565,7 +714,8 @@ def process_single_video(
             ["Y Mean (mm)", f"{vibration['mean_y']*1000:.4f}"],
             ["X Std (mm)", f"{vibration['std_x']*1000:.4f}"],
             ["Y Std (mm)", f"{vibration['std_y']*1000:.4f}"],
-        ], columns=["Parameter", "Value"])
+        ])
+        summary = pd.DataFrame(summary_rows, columns=["Parameter", "Value"])
         summary.to_excel(writer_xl, sheet_name='Summary', index=False)
 
     print(f"  [OK] 数据已保存: {xlsx_path}")
@@ -582,15 +732,20 @@ def _render_frame(
     center_x: float,
     center_y: float,
     radius: float,
-    frame_idx: int
+    frame_idx: int,
+    ellipse_info: Optional[dict] = None
 ) -> np.ndarray:
     """在帧上绘制跟踪标记。
 
     标记内容：
         - 绿色矩形: STARK 跟踪 bbox
         - 红色实心圆: 检测圆心
-        - 红色圆圈: 检测圆轮廓
-        - 黄色文字: 帧号、像素坐标
+        - 红色圆圈/蓝色椭圆: 检测轮廓
+        - 黄色文字: 帧号、像素坐标、椭圆参数（倾斜模式）
+
+    Args:
+        ellipse_info: 椭圆参数字典，包含 a, b, angle, theta_est。
+                      None 时绘制圆形，非 None 时绘制椭圆+倾斜信息。
     """
     rendered = frame.copy()
     cx, cy = int(center_x), int(center_y)
@@ -603,20 +758,53 @@ def _render_frame(
     # 红色圆心
     cv2.circle(rendered, (cx, cy), 5, (0, 0, 255), -1)
 
-    # 红色检测圆
-    if r > 0:
-        cv2.circle(rendered, (cx, cy), r, (0, 0, 255), 2)
+    if ellipse_info is not None:
+        # === 椭圆模式：绘制蓝色椭圆轮廓 ===
+        a = ellipse_info.get('a', 0)
+        b = ellipse_info.get('b', 0)
+        angle = ellipse_info.get('angle', 0)
+        theta = ellipse_info.get('theta_est', 0)
 
-    # 信息文字
-    info_lines = [
-        f"Frame: {frame_idx}",
-        f"Center: ({cx}, {cy}) px",
-        f"Radius: {r} px"
-    ]
-    y0 = 30
-    for i, line in enumerate(info_lines):
-        cv2.putText(rendered, line, (10, y0 + i * 28),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        if a > 0 and b > 0:
+            # cv2.ellipse 需要全长轴（直径）
+            cv2.ellipse(rendered, (cx, cy), (int(a * 2), int(b * 2)),
+                        angle, 0, 360, (255, 128, 0), 2)
+
+        # 倾斜方向指示线（长轴方向）
+        rad = np.radians(angle)
+        dx = int(a * np.cos(rad))
+        dy = int(a * np.sin(rad))
+        cv2.line(rendered, (cx - dx, cy - dy), (cx + dx, cy + dy),
+                 (0, 200, 255), 1)
+
+        # 信息文字
+        info_lines = [
+            f"Frame: {frame_idx}",
+            f"Center: ({cx}, {cy}) px",
+            f"Semi-axes: a={a:.1f}, b={b:.1f} px",
+            f"Angle: {angle:.1f} deg",
+            f"Tilt est: {theta:.2f} deg",
+            f"[TILT CORRECTED]"
+        ]
+        y0 = 30
+        for i, line in enumerate(info_lines):
+            color = (0, 200, 255) if "TILT" in line else (0, 255, 255)
+            cv2.putText(rendered, line, (10, y0 + i * 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    else:
+        # === 圆形模式：绘制红色圆轮廓 ===
+        if r > 0:
+            cv2.circle(rendered, (cx, cy), r, (0, 0, 255), 2)
+
+        info_lines = [
+            f"Frame: {frame_idx}",
+            f"Center: ({cx}, {cy}) px",
+            f"Radius: {r} px"
+        ]
+        y0 = 30
+        for i, line in enumerate(info_lines):
+            cv2.putText(rendered, line, (10, y0 + i * 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
     return rendered
 
@@ -645,6 +833,8 @@ def main():
                         help="自定义输出目录（默认 test/output）")
     parser.add_argument("--exclude", type=str, default=None,
                         help="排除指定视频（逗号分隔视频名，如 90,100）")
+    parser.add_argument("--ellipse-correct", action="store_true",
+                        help="启用椭圆检测+倾斜补偿（各向异性 scale 修正轴倾斜误差）")
     args = parser.parse_args()
 
     # ---- 查找视频 ----
@@ -683,7 +873,13 @@ def main():
 
     # ---- 相机参数（仅主点 cx/cy 参与换算，Z 和 fx 不再需要） ----
     print(f"内参主点: cx={config.CX:.2f}, cy={config.CY:.2f}")
-    print(f"比例尺标定: 轴径={config.SHAFT_DIAMETER_MM:.0f}mm, 首帧检测半径")
+    if args.ellipse_correct:
+        print(f"[MODE] 椭圆检测+倾斜补偿模式: 启用")
+        print(f"  - 检测: detect_ellipse_in_roi (fitEllipse)")
+        print(f"  - 换算: pixel_to_mm_anisotropic (各向异性 scale)")
+        print(f"  - 渲染: 椭圆轮廓 + 倾角θ + [TILT CORRECTED] 标记")
+    else:
+        print(f"比例尺标定: 轴径={config.SHAFT_DIAMETER_MM:.0f}mm, 首帧检测半径")
 
     # ---- ROI ----
     init_roi = args.roi if args.roi else None
@@ -750,6 +946,7 @@ def main():
                     all_summaries.append({
                         "Video": video_name,
                         "Frames": len(existing_df),
+                        "Mode": "Ellipse+Tilt" if "SemiMajor (px)" in existing_df.columns else "Circle",
                         "X_Amp_mm": vib['amplitude_x_mm'],
                         "Y_Amp_mm": vib['amplitude_y_mm'],
                         "Total_Amp_mm": vib['amplitude_total_mm'],
@@ -770,7 +967,8 @@ def main():
             init_roi=shared_roi,
             tracker_factory=tracker_factory,
             skip_render=args.skip_render,
-            step=args.step
+            step=args.step,
+            use_ellipse_correction=args.ellipse_correct
         )
 
         if df is not None and vibration is not None:
@@ -782,6 +980,7 @@ def main():
             all_summaries.append({
                 "Video": video_name,
                 "Frames": len(df),
+                "Mode": "Ellipse+Tilt" if args.ellipse_correct else "Circle",
                 "X_Amp_mm": vibration['amplitude_x_mm'],
                 "Y_Amp_mm": vibration['amplitude_y_mm'],
                 "Total_Amp_mm": vibration['amplitude_total_mm'],

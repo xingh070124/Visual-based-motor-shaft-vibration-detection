@@ -230,6 +230,12 @@ def detect_ellipse_in_roi(
     用于轴不垂直于相机平面的场景：倾斜圆投影为椭圆，
     通过 fitEllipse 获取长短轴，再用各向异性 scale 补偿。
 
+    检测策略（与 detect_shaft_center_in_roi 一致的鲁棒性）：
+        1. Hough 圆检测定位 → 提取轮廓 → fitEllipse
+        2. Otsu 二值化（适用于高对比度场景）
+        3. CLAHE + Canny 轮廓检测
+        4. 回退到 ROI 中心
+
     Args:
         frame: 完整帧图像 (BGR)
         roi_box: 边界框 (x, y, w, h)
@@ -257,77 +263,130 @@ def detect_ellipse_in_roi(
     h = min(h, h_img - y)
 
     if w <= 0 or h <= 0:
-        print("[WARN] ROI 区域无效，回退到 bbox 中心")
         if return_params:
             return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
         return x + w / 2, y + h / 2
 
     roi = frame[y:y + h, x:x + w]
 
-    # 预处理：灰度化 + 高斯模糊 + CLAHE
+    # 预处理：灰度化 + 高斯模糊 + CLAHE（与 detect_shaft_center_in_roi 一致）
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, blur_kernel, 0)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
 
-    # 检测策略：优先用 Otsu 二值化（适用于轴端面 vs 背景对比度高的场景），
-    # 失败时回退到 CLAHE + Canny
+    def _try_fit_ellipse(edges_img):
+        """在边缘图上查找最佳轮廓并 fitEllipse。"""
+        contours, _ = cv2.findContours(edges_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        best_contour = None
+        best_score = 0.0
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < min_contour_area:
+                continue
+            perimeter = cv2.arcLength(cnt, True)
+            if perimeter == 0:
+                continue
+            circularity = 4 * np.pi * area / (perimeter ** 2)
+            if circularity < circularity_threshold:
+                continue
+            score = area * circularity
+            if score > best_score:
+                best_score = score
+                best_contour = cnt
+
+        if best_contour is None or len(best_contour) < 5:
+            return None
+
+        (cx_roi, cy_roi), (width, height), angle = cv2.fitEllipse(best_contour)
+        a = max(width, height) / 2.0
+        b = min(width, height) / 2.0
+
+        # 半径校验
+        if a > expected_radius_pixels * 1.5 or a < expected_radius_pixels * 0.5:
+            return None
+
+        return (cx_roi, cy_roi, a, b, angle)
+
+    # ---- 策略1: Hough 圆检测 → 提取轮廓 → fitEllipse ----
+    circles = cv2.HoughCircles(
+        gray, cv2.HOUGH_GRADIENT, dp=1,
+        minDist=max(20, int(expected_radius_pixels * 1.5)),
+        param1=100, param2=40,
+        minRadius=int(expected_radius_pixels * 0.85),
+        maxRadius=int(expected_radius_pixels * 1.15)
+    )
+
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        best_circle = None
+        best_score = float('inf')
+        roi_center = np.array([w / 2, h / 2])
+
+        for c in circles[0, :]:
+            cr, cc, cradius = int(c[1]), int(c[0]), int(c[2])
+            r_err = abs(cradius - expected_radius_pixels) / expected_radius_pixels
+            d_err = np.linalg.norm(np.array([cc, cr]) - roi_center) / max(w, h)
+            score = r_err + d_err * 2
+            if score < best_score:
+                best_score = score
+                best_circle = (cc, cr, cradius)
+
+        if best_circle is not None and best_score < 0.8:
+            cx_roi, cy_roi, cradius = best_circle
+            # 在 Hough 圆区域做 Canny → fitEllipse
+            r_check = int(cradius)
+            y1 = max(0, cy_roi - r_check)
+            y2 = min(h, cy_roi + r_check)
+            x1 = max(0, cx_roi - r_check)
+            x2 = min(w, cx_roi + r_check)
+            if y2 > y1 and x2 > x1:
+                circle_region = gray[y1:y2, x1:x2]
+                circle_edges = cv2.Canny(circle_region, canny_low, canny_high)
+                result = _try_fit_ellipse(circle_edges)
+                if result is not None:
+                    rx, ry, a, b, angle = result
+                    # 偏移回 ROI 坐标
+                    center_x = x + x1 + rx
+                    center_y = y + y1 + ry
+                    if return_params:
+                        return center_x, center_y, a, b, angle
+                    return center_x, center_y
+
+            # fitEllipse 失败，用 Hough 圆参数（无倾斜 → a=b=radius）
+            center_x = x + cx_roi
+            center_y = y + cy_roi
+            if return_params:
+                return center_x, center_y, float(cradius), float(cradius), 0.0
+            return center_x, center_y
+
+    # ---- 策略2: Otsu 二值化（适用于高对比度场景） ----
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     otsu_thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
 
-    if otsu_thresh > 30:  # 背景暗、目标亮的有效分割
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    else:
-        # 回退：CLAHE + Canny
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        gray_eq = clahe.apply(gray)
-        edges = cv2.Canny(gray_eq, canny_low, canny_high)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if otsu_thresh > 30:
+        result = _try_fit_ellipse(binary)
+        if result is not None:
+            cx_roi, cy_roi, a, b, angle = result
+            center_x = x + cx_roi
+            center_y = y + cy_roi
+            if return_params:
+                return center_x, center_y, a, b, angle
+            return center_x, center_y
 
-    if not contours:
+    # ---- 策略3: CLAHE + Canny 轮廓检测 ----
+    edges = cv2.Canny(gray, canny_low, canny_high)
+    result = _try_fit_ellipse(edges)
+    if result is not None:
+        cx_roi, cy_roi, a, b, angle = result
+        center_x = x + cx_roi
+        center_y = y + cy_roi
         if return_params:
-            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
-        return x + w / 2, y + h / 2
+            return center_x, center_y, a, b, angle
+        return center_x, center_y
 
-    # 选面积最大且圆度达标的轮廓
-    best_contour = None
-    best_score = 0.0
-
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < min_contour_area:
-            continue
-        perimeter = cv2.arcLength(cnt, True)
-        if perimeter == 0:
-            continue
-        circularity = 4 * np.pi * area / (perimeter ** 2)
-        if circularity < circularity_threshold:
-            continue
-        # 评分：面积 × 圆度
-        score = area * circularity
-        if score > best_score:
-            best_score = score
-            best_contour = cnt
-
-    if best_contour is None or len(best_contour) < 5:
-        if return_params:
-            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
-        return x + w / 2, y + h / 2
-
-    # fitEllipse 返回 ((cx, cy), (width, height), angle)
-    # width/height 是全长轴（直径），需除以2得到半轴
-    (cx_roi, cy_roi), (width, height), angle = cv2.fitEllipse(best_contour)
-    a = max(width, height) / 2.0  # 半长轴
-    b = min(width, height) / 2.0  # 半短轴
-
-    # 半径校验：半长轴不应偏离预期太多
-    if a > expected_radius_pixels * 1.5 or a < expected_radius_pixels * 0.5:
-        print(f"[WARN] 椭圆半长轴 {a:.1f} 偏离预期 {expected_radius_pixels:.1f}，回退")
-        if return_params:
-            return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
-        return x + w / 2, y + h / 2
-
-    center_x = x + cx_roi
-    center_y = y + cy_roi
-
+    # ---- 策略4: 回退到 ROI 中心 ----
     if return_params:
-        return center_x, center_y, a, b, angle
-    return center_x, center_y
+        return x + w / 2, y + h / 2, expected_radius_pixels, expected_radius_pixels, 0.0
+    return x + w / 2, y + h / 2
