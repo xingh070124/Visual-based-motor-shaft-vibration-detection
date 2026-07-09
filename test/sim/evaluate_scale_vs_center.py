@@ -33,6 +33,7 @@ from src.tracking.coordinate import (
     pixel_to_mm_anisotropic,
     pixel_to_mm,
     compute_scale_m_per_px,
+    compute_perspective_corrected_scale,
 )
 
 F = config.FX_CALIB_NEW
@@ -122,6 +123,18 @@ def evaluate_single(img_path, gt, expected_radius):
     amp6 = math.sqrt(X6 ** 2 + Y6 ** 2)
     err6 = abs(amp6 - amp_true) / amp_true if amp_true > 0 else 0.0
 
+    # === 方案7: GT 中心 + 透视修正 scale（D·a/(2b²)）===
+    persp_scale_gt = compute_perspective_corrected_scale(D, gt_a, gt_b)
+    X7, Y7 = pixel_to_mm(gt_cx, gt_cy, CX, CY, persp_scale_gt)
+    amp7 = math.sqrt(X7 ** 2 + Y7 ** 2)
+    err7 = abs(amp7 - amp_true) / amp_true if amp_true > 0 else 0.0
+
+    # === 方案8: 检测中心 + 透视修正 scale（D·a/(2b²)）===
+    persp_scale_det = compute_perspective_corrected_scale(D, det_a, det_b)
+    X8, Y8 = pixel_to_mm(det_cx, det_cy, CX, CY, persp_scale_det)
+    amp8 = math.sqrt(X8 ** 2 + Y8 ** 2)
+    err8 = abs(amp8 - amp_true) / amp_true if amp_true > 0 else 0.0
+
     # === 中心检测误差 ===
     center_err_px = math.sqrt((det_cx - gt_cx) ** 2 + (det_cy - gt_cy) ** 2)
 
@@ -155,13 +168,15 @@ def evaluate_single(img_path, gt, expected_radius):
         'center_err_px': center_err_px,
         'a_err_pct': a_err_pct,
         'b_err_pct': b_err_pct,
-        # 振幅误差（6种方案）
+        # 振幅误差（8种方案）
         'err_gt_center_aniso': err1 * 100,
         'err_gt_center_naive': err2 * 100,
         'err_gt_center_gt_scale_aniso': err3 * 100,
         'err_gt_center_gt_scale_naive': err4 * 100,
         'err_det_center_aniso': err5 * 100,
         'err_det_center_naive': err6 * 100,
+        'err_gt_center_persp': err7 * 100,
+        'err_det_center_persp': err8 * 100,
         # 理论值
         'theoretical_naive_err_pct': theoretical_naive_err,
         # 其他
@@ -213,14 +228,16 @@ def main():
     for r in rows:
         by_theta[r['theta_true']].append(r)
 
-    print(f"\n{'='*100}")
+    print(f"\n{'='*120}")
     print("分离评估汇总 — 按 θ 分组")
-    print(f"{'='*100}")
+    print(f"{'='*120}")
     print(f"{'θ(°)':>5} | {'GT中心+检测scale':>20} | {'GT中心+GTscale':>20} | "
-          f"{'检测中心+检测scale':>20} | {'理论naive误差':>14} | {'中心检测误差':>14}")
+          f"{'GT中心+透视修正':>16} | {'检测中心+透视修正':>18} | "
+          f"{'检测中心+检测scale':>20} | {'理论naive':>10}")
     print(f"{'':>5} | {'各向异性 / naive':>20} | {'各向异性 / naive':>20} | "
-          f"{'各向异性 / naive':>20} | {'(%)':>14} | {'(px)':>14}")
-    print("-" * 100)
+          f"{'D·a/(2b²)':>16} | {'D·a/(2b²)':>18} | "
+          f"{'各向异性 / naive':>20} | {'误差(%)':>10}")
+    print("-" * 120)
 
     summary = []
     for theta in sorted(by_theta.keys()):
@@ -231,6 +248,10 @@ def main():
         # GT中心 + GT scale
         gt_gt_aniso = np.mean([r['err_gt_center_gt_scale_aniso'] for r in rs])
         gt_gt_naive = np.mean([r['err_gt_center_gt_scale_naive'] for r in rs])
+        # GT中心 + 透视修正
+        gt_persp = np.mean([r['err_gt_center_persp'] for r in rs])
+        # 检测中心 + 透视修正
+        det_persp = np.mean([r['err_det_center_persp'] for r in rs])
         # 检测中心 + 检测scale
         det_aniso = np.mean([r['err_det_center_aniso'] for r in rs])
         det_naive = np.mean([r['err_det_center_naive'] for r in rs])
@@ -239,42 +260,38 @@ def main():
         # 中心检测误差
         center_err = np.mean([r['center_err_px'] for r in rs])
 
-        # scale 改善量 = naive - 各向异性
-        gt_scale_improvement = gt_naive - gt_aniso
-        gt_gt_scale_improvement = gt_gt_naive - gt_gt_aniso
-        det_scale_improvement = det_naive - det_aniso
-
         print(f"{theta:5.0f} | {gt_aniso:8.3f}% / {gt_naive:8.3f}% | "
               f"{gt_gt_aniso:8.3f}% / {gt_gt_naive:8.3f}% | "
+              f"{gt_persp:14.3f}% | {det_persp:16.3f}% | "
               f"{det_aniso:8.3f}% / {det_naive:8.3f}% | "
-              f"{theo:12.3f}% | {center_err:12.4f}")
+              f"{theo:8.3f}%")
 
         summary.append({
             'theta_true': theta,
             'count': len(rs),
             'gt_center_aniso_err_pct': gt_aniso,
             'gt_center_naive_err_pct': gt_naive,
-            'gt_center_scale_improvement_pct': gt_scale_improvement,
             'gt_center_gt_scale_aniso_err_pct': gt_gt_aniso,
             'gt_center_gt_scale_naive_err_pct': gt_gt_naive,
-            'gt_center_gt_scale_improvement_pct': gt_gt_scale_improvement,
+            'gt_center_persp_err_pct': gt_persp,
+            'det_center_persp_err_pct': det_persp,
             'det_center_aniso_err_pct': det_aniso,
             'det_center_naive_err_pct': det_naive,
-            'det_center_scale_improvement_pct': det_scale_improvement,
             'theoretical_naive_err_pct': theo,
             'center_detection_err_px': center_err,
             'a_detection_err_pct': np.mean([r['a_err_pct'] for r in rs]),
             'b_detection_err_pct': np.mean([r['b_err_pct'] for r in rs]),
         })
 
-    print(f"\n{'='*100}")
+    print(f"\n{'='*120}")
     print("结论:")
     for s in summary:
         t = s['theta_true']
         print(f"  θ={t:.0f}°: "
-              f"GT中心+GTscale 改善={s['gt_center_gt_scale_improvement_pct']:.3f}% (理论={s['theoretical_naive_err_pct']:.3f}%), "
-              f"检测中心+检测scale 改善={s['det_center_scale_improvement_pct']:.3f}%, "
-              f"中心误差={s['center_detection_err_px']:.4f}px")
+              f"透视修正(GT中心)={s['gt_center_persp_err_pct']:.3f}%, "
+              f"naive(GT中心)={s['gt_center_naive_err_pct']:.3f}%, "
+              f"各向异性(GT中心)={s['gt_center_aniso_err_pct']:.3f}%, "
+              f"透视修正(检测中心)={s['det_center_persp_err_pct']:.3f}%")
 
     # 保存汇总
     summary_csv = os.path.join(results_dir, 'scale_vs_center_summary.csv')
