@@ -94,8 +94,8 @@ def detect_shaft_center_in_roi(
         gray, cv2.HOUGH_GRADIENT, dp=1,
         minDist=max(20, int(expected_radius_pixels * 1.5)),
         param1=100, param2=40,
-        minRadius=int(expected_radius_pixels * 0.85),
-        maxRadius=int(expected_radius_pixels * 1.15)
+        minRadius=int(expected_radius_pixels * 0.75),
+        maxRadius=int(expected_radius_pixels * 1.05)
     )
 
     if circles is not None:
@@ -303,8 +303,14 @@ def detect_ellipse_in_roi(
         a = max(width, height) / 2.0
         b = min(width, height) / 2.0
 
-        # 半径校验
-        if a > expected_radius_pixels * 1.5 or a < expected_radius_pixels * 0.5:
+        # 半径校验：收紧到 ±15%，防止检测到轴承外圈等更大圆
+        if a > expected_radius_pixels * 1.15 or a < expected_radius_pixels * 0.75:
+            return None
+
+        # 椭圆必须落在 ROI 内部（不允许超出用户框选范围）
+        roi_half_w = w / 2.0
+        roi_half_h = h / 2.0
+        if a > roi_half_w or b > roi_half_h:
             return None
 
         return (cx_roi, cy_roi, a, b, angle)
@@ -314,8 +320,8 @@ def detect_ellipse_in_roi(
         gray, cv2.HOUGH_GRADIENT, dp=1,
         minDist=max(20, int(expected_radius_pixels * 1.5)),
         param1=100, param2=40,
-        minRadius=int(expected_radius_pixels * 0.85),
-        maxRadius=int(expected_radius_pixels * 1.15)
+        minRadius=int(expected_radius_pixels * 0.75),
+        maxRadius=int(expected_radius_pixels * 1.05)
     )
 
     if circles is not None:
