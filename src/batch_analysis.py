@@ -381,6 +381,12 @@ def process_single_video(
             expected_radius = init_a
         print(f"  [ELLIPSE] 首帧: a={init_a:.1f}, b={init_b:.1f}, "
               f"angle={init_angle:.1f}°, θ_est={init_theta:.2f}°")
+
+        # 小角度退化处理：θ < 3° 时 arccos 噪声放大，回退到各向同性 scale
+        if init_theta < 3.0 and init_theta >= 0:
+            print(f"  [ELLIPSE] θ_est={init_theta:.2f}° < 3°, 退化为各向同性 scale（避免小角度噪声放大）")
+            use_ellipse_correction = False
+            init_radius = (init_a + init_b) / 2.0 if init_a > 0 else expected_radius
     else:
         init_center_x, init_center_y, init_radius = detect_shaft_center_in_roi(
             first_frame, used_roi,
@@ -463,9 +469,13 @@ def process_single_video(
     last_angle = 0.0
     last_theta = 0.0
 
-    # 首帧：用 STARK bbox 中心作为初始位置
-    init_px = last_cx
-    init_py = last_cy
+    # 首帧位置：椭圆模式用椭圆中心，圆形模式用 bbox 中心
+    if use_ellipse_correction and init_a > 0:
+        init_px = init_center_x
+        init_py = init_center_y
+    else:
+        init_px = last_cx
+        init_py = last_cy
 
     if use_ellipse_correction:
         # 椭圆模式：首帧检测已在上面完成，直接使用 init_a/init_b/init_angle
@@ -474,6 +484,9 @@ def process_single_video(
         vis_angle = init_angle
         vis_theta = init_theta
         last_radius = init_a if init_a > 0 else last_radius
+        # 首帧位置用椭圆中心
+        last_cx = init_px
+        last_cy = init_py
         results.append([1, init_px, init_py, vis_a, vis_b, vis_angle])
     else:
         # 圆形模式：首帧额外检测用于显示
@@ -531,13 +544,13 @@ def process_single_video(
         except Exception:
             pred_box = last_bbox
 
-        # ★ 振动数据：直接用 STARK bbox 中心（更可靠）
+        # STARK bbox 中心作为默认位置
         track_cx = pred_box[0] + pred_box[2] / 2
         track_cy = pred_box[1] + pred_box[3] / 2
 
         if use_ellipse_correction:
-            # 椭圆检测：获取长短轴和倾角
-            _, _, vis_a, vis_b, vis_angle = detect_ellipse_in_roi(
+            # 椭圆检测：获取椭圆中心和长短轴倾角
+            ell_cx, ell_cy, vis_a, vis_b, vis_angle = detect_ellipse_in_roi(
                 frame, pred_box,
                 expected_radius_pixels=expected_radius,
                 circularity_threshold=0.3,
@@ -546,6 +559,11 @@ def process_single_video(
                 blur_kernel=config.GAUSSIAN_BLUR_KERNEL,
                 return_params=True
             )
+            # 用椭圆中心替代 bbox 中心作为振动数据源
+            # 椭圆中心是圆心投影的精确估计，bbox 中心存在系统性偏移
+            if vis_a > 0:
+                track_cx = ell_cx
+                track_cy = ell_cy
             vis_theta = estimate_tilt_angle(vis_a, vis_b)
 
             # 半长轴用于半径历史
@@ -631,10 +649,11 @@ def process_single_video(
             )
             for row in results:
                 # row: [frame_idx, px, py, a, b, angle]
-                px, py, ell_angle = row[1], row[2], row[5]
+                px, py = row[1], row[2]
+                # 使用首帧固定角度做坐标换算（避免逐帧角度噪声引入不一致误差）
                 cam_x, cam_y = pixel_to_mm_anisotropic(
                     px, py, config.CX, config.CY,
-                    scale_major, scale_minor, ell_angle
+                    scale_major, scale_minor, init_angle
                 )
                 row.append(cam_x)
                 row.append(cam_y)
