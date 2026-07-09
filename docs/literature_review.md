@@ -153,13 +153,13 @@ scale = physical_radius / R_median，其中R_median为前50帧半径中位数。
 
 | 编号 | arXiv ID | 标题 | 解决问题 |
 |------|----------|------|---------|
-| A | 1204.0382 | [Feature Detection in Radio Astronomy using CHT](../docs/Feature%20Detection%20in%20Radio%20Astronomy%20using%20the%20Circle%20Hough%20Transform.pdf)  | #1,#3,#4 |
-| B | 2003.04676 | [Deep Hough Transform for Semantic Line Detection](../docs/Deep%20Hough%20Transform%20for%20Semantic%20Line%20Detection.pdf) | #1,#3,#4 |
-| C | 2301.09657 | [YOLO-CL: Galaxy cluster detection](../docs/YOLO-CL%20Galaxy%20cluster%20detection%20in%20the%20SDSS%20with%20deep%20machine%20learning.pdf) | #1~#4 |
-| D | 2311.03725 | [DeepInspect: AI-Powered Defect Detection](../docs/DeepInspect%20An%20AI-Powered%20Defect%20Detection%20for%20Manufacturing%20Industries.pdf) | #1~#4 |
-| E | 2210.12807 | [HKF: Hierarchical Kalman Filtering](../docs/HKF%20Hierarchical%20Kalman%20Filtering%20with%20Online%20Learned%20Evolution%20Priors%20for%20Adaptive%20ECG%20Denoising.pdf) | #5 |
-| F | 2001.05165 | [Terrain estimation via vehicle vibration + CKF](../docs/Terrain%20estimation%20via%20vehicle%20vibration%20measurement%20and%20Cubature%20Kalman%20Filtering.pdf) | #5 |
-| G | 2210.04165 | [Neural Extended Kalman Filters](../docs/Neural%20Extended%20Kalman%20Filters%20for%20Learning%20and%20Predicting%20Dynamics%20of%20Structural%20Systems.pdf) | #6 |
-| H | 1205.6903 | [CRLB for Polynomial Signal Estimation with Drift](../docs/Cram%20´er-Rao%20Bounds%20for%20Polynomial%20Signal%20Estimation%20using%20Sensors%20with%20AR(1)%20Drift.pdf) | #6 |
-| I | 2303.10559 | [Deep Learning for Camera Calibration Survey](../docs/Deep%20Learning%20for%20Camera%20Calibration%20and%20Beyond%20A%20Survey.pdf) | #2,#8 |
-| J | 2304.14394 | [SeqTrack: Seq2Seq Learning for Tracking](../docs/Unified%20Sequence-to-Sequence%20Learning%20for%20Single-%20and%20Multi-Modal%20Visual%20Object%20Tracking.pdf) | #5 |
+| A | 1204.0382 | [Feature Detection in Radio Astronomy using CHT](papers/circle_detection/Feature%20Detection%20in%20Radio%20Astronomy%20using%20the%20Circle%20Hough%20Transform.pdf)  | #1,#3,#4 |
+| B | 2003.04676 | [Deep Hough Transform for Semantic Line Detection](papers/circle_detection/Deep%20Hough%20Transform%20for%20Semantic%20Line%20Detection.pdf) | #1,#3,#4 |
+| C | 2301.09657 | [YOLO-CL: Galaxy cluster detection](papers/circle_detection/YOLO-CL%20Galaxy%20cluster%20detection%20in%20the%20SDSS%20with%20deep%20machine%20learning.pdf) | #1~#4 |
+| D | 2311.03725 | [DeepInspect: AI-Powered Defect Detection](papers/visual_tracking/DeepInspect%20An%20AI-Powered%20Defect%20Detection%20for%20Manufacturing%20Industries.pdf) | #1~#4 |
+| E | 2210.12807 | [HKF: Hierarchical Kalman Filtering](papers/kalman_filtering/HKF%20Hierarchical%20Kalman%20Filtering%20with%20Online%20Learned%20Evolution%20Priors%20for%20Adaptive%20ECG%20Denoising.pdf) | #5 |
+| F | 2001.05165 | [Terrain estimation via vehicle vibration + CKF](papers/kalman_filtering/Terrain%20estimation%20via%20vehicle%20vibration%20measurement%20and%20Cubature%20Kalman%20Filtering.pdf) | #5 |
+| G | 2210.04165 | [Neural Extended Kalman Filters](papers/kalman_filtering/Neural%20Extended%20Kalman%20Filters%20for%20Learning%20and%20Predicting%20Dynamics%20of%20Structural%20Systems.pdf) | #6 |
+| H | 1205.6903 | [CRLB for Polynomial Signal Estimation with Drift](papers/signal_estimation/Cram%C2%B4er-Rao%20Bounds%20for%20Polynomial%20Signal%20Estimation%20using%20Sensors%20with%20AR(1)%20Drift.pdf) | #6 |
+| I | 2303.10559 | [Deep Learning for Camera Calibration Survey](papers/camera_calibration/Deep%20Learning%20for%20Camera%20Calibration%20and%20Beyond%20A%20Survey.pdf) | #2,#8 |
+| J | 2304.14394 | [SeqTrack: Seq2Seq Learning for Tracking](papers/visual_tracking/Unified%20Sequence-to-Sequence%20Learning%20for%20Single-%20and%20Multi-Modal%20Visual%20Object%20Tracking.pdf) | #5 |
