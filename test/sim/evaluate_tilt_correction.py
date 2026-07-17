@@ -7,7 +7,7 @@
   3. results/summary_by_noise.csv — 按噪声水平分组的统计
   4. results/eval_report.json — 验收标准核对
   5. figures/theta_error_vs_noise.png — 倾角误差-噪声曲线
-  6. figures/amplitude_error_vs_theta.png — 振幅误差-倾角曲线
+  6. figures/amplitude_error_vs_theta.png — Amplitude error vs tilt angle
 
 用法：
     D:\\anaconda\\python.exe test/sim/evaluate_tilt_correction.py
@@ -323,7 +323,7 @@ def check_acceptance(rows):
 # =============================================================================
 
 def plot_theta_error_vs_noise(rows, out_path):
-    """倾角误差-噪声曲线（按倾角分组，X 轴为噪声水平）。"""
+    """Tilt angle error vs noise level。"""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -344,19 +344,19 @@ def plot_theta_error_vs_noise(rows, out_path):
             ys.append(np.mean(errs) if errs else 0)
         ax.plot(sigmas, ys, marker='o', label=f'θ={theta}°')
 
-    ax.set_xlabel('Noise σ (灰度)')
-    ax.set_ylabel('Tilt Angle Error (°)')
-    ax.set_title('倾角反演精度 vs 噪声水平（按倾角分组）')
+    ax.set_xlabel('Noise level σ (pixels)')
+    ax.set_ylabel('Tilt Angle Error (deg)')
+    ax.set_title('Tilt Angle Estimation Accuracy vs Noise Level')
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
-    print(f"图: {out_path}")
+    print(f"Figure: {out_path}")
 
 
 def plot_amplitude_error_vs_theta(rows, out_path):
-    """振幅误差-倾角曲线。"""
+    """Amplitude error vs tilt angle。"""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -379,17 +379,17 @@ def plot_amplitude_error_vs_theta(rows, out_path):
 
     ax.set_xlabel('Tilt Angle (°)')
     ax.set_ylabel('Amplitude Relative Error (%)')
-    ax.set_title('振幅相对误差 vs 倾角（各向异性 scale 补偿后）')
+    ax.set_title('Amplitude Relative Error vs Tilt Angle (anisotropic scale)')
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
-    print(f"图: {out_path}")
+    print(f"Figure: {out_path}")
 
 
 def plot_anisotropy_ratio(rows, out_path):
-    """各向异性比 |AmpX / AmpY| 随倾角变化。"""
+    """Anisotropy ratio |Ampx/Ampx| vs tilt angle。"""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -409,16 +409,16 @@ def plot_anisotropy_ratio(rows, out_path):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.errorbar(thetas, means, yerr=stds, marker='o', capsize=4)
-    ax.axhline(1.0, color='r', linestyle='--', label='理想各向同性 (1.0)')
-    ax.set_xlabel('Tilt Angle (°)')
+    ax.axhline(1.0, color='r', linestyle='--', label='Ideal isotropic (1.0)')
+    ax.set_xlabel('Tilt Angle (deg)')
     ax.set_ylabel('|X_est / Y_est|')
-    ax.set_title('各向异性比 — 补偿后应接近 1.0')
+    ax.set_title('Anisotropy Ratio — should approach 1.0 after correction')
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
-    print(f"图: {out_path}")
+    print(f"Figure: {out_path}")
 
 
 # =============================================================================

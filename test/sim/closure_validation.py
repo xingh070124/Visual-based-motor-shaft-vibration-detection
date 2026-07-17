@@ -353,14 +353,14 @@ def plot_closure(rows, figures_dir):
     fig, ax = plt.subplots(figsize=(10, 6))
     x = np.arange(len(thetas))
     w = 0.35
-    ax.bar(x - w/2, before_means, w, yerr=before_stds, label='补偿前', color='#ff6b6b', capsize=3)
-    ax.bar(x + w/2, after_means, w, yerr=after_stds, label='补偿后', color='#4ecdc4', capsize=3)
+    ax.bar(x - w/2, before_means, w, yerr=before_stds, label='Before correction', color='#ff6b6b', capsize=3)
+    ax.bar(x + w/2, after_means, w, yerr=after_stds, label='After correction', color='#4ecdc4', capsize=3)
     ax.axhline(1.0, color='gray', linestyle='--', alpha=0.5)
     ax.set_xticks(x)
     ax.set_xticklabels([f'{t:.0f}°' for t in thetas])
-    ax.set_xlabel('倾角 θ (°)')
-    ax.set_ylabel('椭圆度 a/b')
-    ax.set_title('补偿前后椭圆度对比（补偿后应→1）')
+    ax.set_xlabel('Tilt Angle θ (deg)')
+    ax.set_ylabel('Axis Ratio a/b')
+    ax.set_title('Axis Ratio Before vs After Correction (should approach 1)')
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -376,12 +376,12 @@ def plot_closure(rows, figures_dir):
     positions = list(range(len(thetas)))
     data = [by_theta_vib[t] for t in thetas]
     bp = ax.boxplot(data, positions=positions, widths=0.5, showfliers=False)
-    ax.axhline(1.0, color='r', linestyle='--', label='理想保持率 (1.0)')
+    ax.axhline(1.0, color='r', linestyle='--', label='Ideal preservation (1.0)')
     ax.set_xticks(positions)
     ax.set_xticklabels([f'{t:.0f}°' for t in thetas])
-    ax.set_xlabel('倾角 θ (°)')
-    ax.set_ylabel('振动保持率 (校正后/校正前)')
-    ax.set_title('振动保持性 — 补偿不应消除振动信号')
+    ax.set_xlabel('Tilt Angle θ (deg)')
+    ax.set_ylabel('Vibration Preservation Ratio (after/before)')
+    ax.set_title('Vibration Preservation — correction should not eliminate vibration')
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0.8, 1.2)
@@ -389,8 +389,8 @@ def plot_closure(rows, figures_dir):
     plt.savefig(os.path.join(figures_dir, 'closure_vibration_preservation.png'), dpi=120)
     plt.close()
 
-    print("图: closure_ratio_before_after.png")
-    print("图: closure_vibration_preservation.png")
+    print("Figure: closure_ratio_before_after.png")
+    print("Figure: closure_vibration_preservation.png")
 
 
 def main():

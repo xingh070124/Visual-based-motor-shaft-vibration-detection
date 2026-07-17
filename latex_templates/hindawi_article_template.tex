@@ -1,0 +1,116 @@
+% Hindawi 期刊通用 LaTeX 模板（以 Shock and Vibration 为例）
+% Hindawi 投稿系统接受标准 article class，基本要求：
+%   - 单栏 (one column)
+%   - 12pt 字体
+%   - 双倍行距 (setspace)
+%   - 1 英寸页边距 (geometry)
+%   - 行号可选，部分期刊初审建议添加
+% 编译方式：pdfLaTeX 或 XeLaTeX（中文作者可用 ctex 宏包）
+\documentclass[12pt,a4paper]{article}
+
+% ==================== 页面设置 ====================
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\doublespacing
+
+% ==================== 基础宏包 ====================
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{lineno}          % 行号，部分期刊初审建议保留
+\linenumbers
+
+% ==================== 标题与作者 ====================
+\title{Vision-Based Motor Shaft Vibration Measurement Using STARK Tracking and Shaft-Diameter Self-Calibration}
+
+\author{First Author$^{1,*}$, Second Author$^{2}$, Third Author$^{1}$ \\
+\small $^{1}$School of Mechanical Engineering, University Name, City, Country \\
+\small $^{2}$Department of Electrical Engineering, University Name, City, Country \\
+\small $^{*}$Corresponding author: email@university.edu.cn}
+
+\date{}
+
+% ==================== 正文开始 ====================
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+This study presents a non-contact vision-based method for measuring motor shaft vibration amplitudes.
+A spatio-temporal transformer tracker (STARK-ST) is employed to localize the rotating shaft region,
+followed by ellipse-aware circle detection for sub-pixel center estimation.
+Pixel displacements are converted into physical coordinates through a shaft-diameter self-calibration strategy,
+eliminating the need for a precise working distance.
+Vibration amplitudes in the X and Y directions are computed as peak-to-peak values,
+and a laser displacement sensor is used for cross-validation.
+Experimental results demonstrate that the proposed system achieves comparable accuracy to the laser reference
+while providing a low-cost and flexible alternative for rotating machinery monitoring.
+\end{abstract}
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} visual tracking; motor shaft vibration; STARK; camera calibration; non-contact measurement
+
+\section{Introduction}
+Rotating machinery fault diagnosis relies heavily on vibration measurement.
+Traditional contact sensors require mounting fixtures and cabling, which limit applicability in confined spaces.
+Vision-based methods offer non-contact, full-field, and easy-deployment advantages.
+However, high-speed rotation, motion blur, and illumination changes challenge robust target tracking.
+
+In this work, we integrate the STARK-ST visual tracker with geometric shaft detection
+and propose a shaft-diameter-based scale calibration method.
+The contributions are as follows:
+\begin{itemize}
+    \item Application of a transformer-based tracker to rotating shaft vibration measurement.
+    \item A robust center-detection pipeline combining STARK ROI prediction and ellipse/circle fitting.
+    \item A scale self-calibration method using the known shaft diameter instead of a fixed working distance.
+\end{itemize}
+
+\section{Methodology}
+\subsection{Visual Tracking}
+The STARK-ST tracker predicts the target bounding box in each frame.
+The predicted ROI is then refined by contour-based circle detection.
+
+\subsection{Coordinate Conversion}
+Given the detected pixel radius $r$ and the known shaft diameter $D$,
+the scale factor $s$ is computed as
+\begin{equation}
+s = \frac{D}{2r} \quad \text{(m/pixel)}.
+\end{equation}
+The physical displacement relative to the optical center is
+\begin{equation}
+\Delta X = s \,(u - c_x), \qquad \Delta Y = s \,(v - c_y),
+\end{equation}
+where $(u,v)$ is the detected center and $(c_x,c_y)$ is the principal point.
+
+\subsection{Vibration Amplitude}
+The peak-to-peak amplitude is
+\begin{equation}
+A_x = \max(\Delta X) - \min(\Delta X), \qquad
+A_y = \max(\Delta Y) - \min(\Delta Y),
+\end{equation}
+and the total amplitude is $A_{total} = \sqrt{A_x^2 + A_y^2}$.
+
+\section{Experiments and Results}
+Describe the experimental setup, dataset, comparison with laser sensor, and quantitative results.
+Use tables and figures as needed.
+
+\section{Conclusion}
+Summarize the main findings and potential future work.
+
+% ==================== 参考文献 ====================
+\begin{thebibliography}{9}
+\bibitem{stark2021}
+B. Yan et al., ``Learning spatio-temporal transformer for visual tracking,'' \textit{Proc. IEEE/CVF ICCV}, 2021, pp. 10448--10457.
+
+\bibitem{zhang2000}
+Z. Zhang, ``A flexible new technique for camera calibration,'' \textit{IEEE Trans. Pattern Anal. Mach. Intell.}, vol. 22, no. 11, pp. 1330--1334, 2000.
+
+\bibitem{visionvibration2020}
+A. Author et al., ``Vision-based vibration measurement: A review,'' \textit{Mech. Syst. Signal Process.}, vol. 135, p. 106382, 2020.
+\end{thebibliography}
+
+\end{document}

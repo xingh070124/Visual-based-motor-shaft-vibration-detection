@@ -1,0 +1,76 @@
+\documentclass[12pt]{letter}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+
+\signature{Xinze Li}
+\address{School of Mechanical Engineering \\
+[University Name] \\
+[City], [Country] \\
+E-mail: [author@email.com]}
+
+\begin{document}
+
+\begin{letter}{Editor-in-Chief \\
+IEEE Transactions on Instrumentation and Measurement}
+
+\opening{Dear Editor-in-Chief,}
+
+I am pleased to submit our manuscript entitled \textbf{``Perspective-Corrected
+Monocular Vision for Non-Contact Motor Shaft Vibration Measurement''} for
+consideration for publication in the IEEE Transactions on Instrumentation
+and Measurement.
+
+\section*{Relevance to IEEE TIM}
+
+This manuscript directly aligns with IEEE TIM's scope in instrumentation and
+measurement methodologies. We present a novel non-contact vibration measurement
+system that uses a single monocular camera and visual object tracking to
+measure motor shaft vibration amplitude. The work addresses a practical
+measurement challenge---camera misalignment in field deployments---through a
+rigorous geometric derivation and systematic experimental validation.
+
+\section*{Novelty and Contribution}
+
+The key innovation is a \textbf{perspective-corrected isotropic scale factor}
+$s = D a / (2b^2)$, derived from the pinhole camera model, which correctly
+converts pixel displacements to physical displacements when the camera views
+a circular shaft cross-section obliquely. We prove that the scale factor is
+isotropic (identical in all directions) despite the elliptical appearance of the
+projected circle, and show that the commonly used naive scale $D/(2a)$
+systematically underestimates the true scale by $\cos^2\theta$.
+
+The method requires only the shaft diameter as prior knowledge---no depth
+sensors, laser rangefinders, or target markers are needed. Validation on 640
+synthetic images (8 tilt angles $\times$ 5 vibration phases $\times$ 4 noise
+levels $\times$ 4 blur levels) and real motor shaft videos at 10--100 RPM
+demonstrates the method's accuracy and robustness.
+
+\section*{Key Findings}
+
+\begin{itemize}
+\item Tilt angle estimation accuracy: mean error $< 1^{\circ}$ for
+$\theta \geq 3^{\circ}$
+\item Scale formula error: $< 0.1\%$ (negligible compared to detection errors)
+\item Dominant error source: ellipse center detection precision ($\sim 0.1$~px),
+not the scale formula
+\item Real-world improvement: scale stability improved by 2.9$\times$, drift
+reduced by up to 3$\times$
+\end{itemize}
+
+\section*{Statements}
+
+This manuscript has not been published previously and is not under consideration
+for publication elsewhere. All authors have approved the manuscript and agree
+with its submission to IEEE TIM. There are no conflicts of interest to declare.
+
+The undergraduate thesis on which this work is based has been submitted to
+[University Name] as a degree requirement. The thesis and this manuscript
+contain distinct content, with this manuscript focusing on the perspective
+correction methodology and including new analysis not present in the thesis.
+
+Thank you for considering our manuscript. We look forward to your response.
+
+\closing{Sincerely,}
+
+\end{letter}
+\end{document}
